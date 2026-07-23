@@ -45,7 +45,7 @@ class BranchNameGenerator:
         # Generate the descriptive part
         description = self._generate_description(analysis)
         
-        # Combine type and description with colon
+        # Combine type and description with colon (no space after colon for Git compatibility)
         branch_name = f"{change_type}:{description}"
         
         # Sanitize the branch name
@@ -306,13 +306,17 @@ class BranchNameGenerator:
         # Convert to lowercase
         name = name.lower()
         
-        # Replace spaces and underscores with hyphens
+        # Replace spaces and underscores with hyphens, but preserve colon spacing
+        # First replace colon + space with colon to avoid double hyphens
+        name = re.sub(r':\s+', ':', name)
+        
+        # Then replace remaining spaces and underscores with hyphens
         name = re.sub(r'[\s_]+', '-', name)
         
         # Remove special characters except hyphens and colons
         name = re.sub(r'[^a-z0-9-:]', '', name)
         
-        # Remove consecutive hyphens
+        # Remove consecutive hyphens (but preserve colon)
         name = re.sub(r'-+', '-', name)
         
         # Remove leading/trailing hyphens
