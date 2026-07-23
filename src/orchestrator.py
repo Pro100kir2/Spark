@@ -346,10 +346,34 @@ class Orchestrator:
                 if pr_state == PRState.MERGED:
                     self.logger.info(f"PR для ветки {current_branch} был слит. Удаляем ветку.")
                     try:
+                        # Switch to main branch first (cannot delete current branch)
+                        self.git_ops.checkout_branch('main')
+                        self.logger.info("Переключились на ветку main")
+                        
+                        # Update main branch
+                        try:
+                            self.git_ops.pull_rebase()
+                            self.logger.info("Ветка main обновлена")
+                        except GitOperationError as e:
+                            self.logger.warning(f"Не удалось обновить main: {e}")
+                        
+                        # Delete local branch
                         self.git_ops.delete_local_branch(current_branch, force=False)
                         self.logger.success(f"Ветка {current_branch} удалена локально")
+                        
+                        # Delete remote branch
+                        try:
+                            self.git_ops.delete_remote_branch(current_branch)
+                            self.logger.success(f"Удалена удалённая ветка origin/{current_branch}")
+                        except GitOperationError as e:
+                            self.logger.warning(f"Не удалось удалить удалённую ветку: {e}")
+                        
+                        # Return None to trigger new workflow
+                        return None
                     except GitOperationError as e:
                         self.logger.warning(f"Не удалось удалить ветку {current_branch}: {e}")
+                        # Still return None to trigger new workflow even if deletion failed
+                        return None
                 
                 return current_branch
         
@@ -746,6 +770,8 @@ class Orchestrator:
         modified_files = status.staged_files + status.unstaged_files
         if modified_files:
             self.logger.debug(f"Attempting to add files: {modified_files}")
+            self.logger.debug(f"Staged files: {status.staged_files}")
+            self.logger.debug(f"Unstaged files: {status.unstaged_files}")
             self.git_ops.add_files(modified_files)
             self.logger.info(f"Added {len(modified_files)} modified file(s)")
         
