@@ -393,8 +393,32 @@ class Orchestrator:
                         return None
                 elif pr_state == PRState.CLOSED:
                     self.logger.info(f"PR для ветки {current_branch} закрыт (не слит)")
-
-                return current_branch
+                    # Switch to main to create new branch
+                    self.logger.info("Переключаемся на main для создания новой ветки")
+                    try:
+                        self.git_ops.checkout_branch('main')
+                        self.logger.info("Переключились на ветку main")
+                    except GitOperationError as e:
+                        self.logger.warning(f"Не удалось переключиться на main: {e}")
+                        return None
+                else:
+                    # PR is OPEN - switch to main to create new branch
+                    self.logger.info(f"PR для ветки {current_branch} открыт. Переключаемся на main для создания новой ветки")
+                    try:
+                        self.git_ops.checkout_branch('main')
+                        self.logger.info("Переключились на ветку main")
+                    except GitOperationError as e:
+                        self.logger.warning(f"Не удалось переключиться на main: {e}")
+                        return None
+            else:
+                # No PR exists for this branch - switch to main to create new branch
+                self.logger.info(f"Нет PR для ветки {current_branch}. Переключаемся на main для создания новой ветки")
+                try:
+                    self.git_ops.checkout_branch('main')
+                    self.logger.info("Переключились на ветку main")
+                except GitOperationError as e:
+                    self.logger.warning(f"Не удалось переключиться на main: {e}")
+                    return None
         
         # Also check for other merged branches and clean them up
         self.logger.debug("Checking for other merged branches to clean up")
@@ -668,104 +692,96 @@ class Orchestrator:
                 print(f"  {i}. {file_path}")
             
             print("\nВыберите действие:")
-            print("1) Добавить файлы в git")
-            print("2) Завершить скрипт")
+            print("1) Добавить в git")
+            print("2) Добавить в gitignore")
+            print("3) Завершить")
             
-            choice = input("\nВаш выбор (1/2): ").strip()
+            choice = input("\nВаш выбор (1/2/3): ").strip()
             
-            if choice == '2':
+            if choice == '3':
                 print("\nСкрипт завершен.")
                 return True
             
-            if choice != '1':
+            if choice == '1':
+                # Add to git
+                print("\nВведите номера файлов для добавления в git:")
+                print("- Если файлов < 10: введите номера подряд (например: 14589)")
+                print("- Если файлов >= 10: введите номера через \\ (например: 1\\2\\4\\5\\9)")
+                print("- Нажмите Enter чтобы добавить все файлы")
+                
+                files_input = input("Номера файлов: ").strip()
+                
+                files_to_add = []
+                if not files_input:
+                    # Add all files
+                    files_to_add = new_files
+                else:
+                    # Parse input
+                    if len(new_files) < 10:
+                        # Parse as consecutive digits
+                        for char in files_input:
+                            try:
+                                index = int(char) - 1
+                                if 0 <= index < len(new_files):
+                                    files_to_add.append(new_files[index])
+                            except ValueError:
+                                continue
+                    else:
+                        # Parse as numbers separated by \
+                        indices = files_input.split('\\')
+                        for idx_str in indices:
+                            try:
+                                index = int(idx_str.strip()) - 1
+                                if 0 <= index < len(new_files):
+                                    files_to_add.append(new_files[index])
+                            except ValueError:
+                                continue
+                
+                if files_to_add:
+                    self.git_ops.add_files(files_to_add)
+                    print(f"\nДобавлено {len(files_to_add)} файл(ов) в git")
+            
+            elif choice == '2':
+                # Add to gitignore
+                print("\nВведите номера файлов для добавления в .gitignore:")
+                print("- Если файлов < 10: введите номера подряд (например: 189)")
+                print("- Если файлов >= 10: введите номера через \\ (например: 1\\8\\9\\11\\18)")
+                print("- Нажмите Enter чтобы добавить все файлы")
+                
+                gitignore_input = input("Номера файлов: ").strip()
+                
+                files_to_gitignore = []
+                if not gitignore_input:
+                    # Add all files
+                    files_to_gitignore = new_files
+                else:
+                    # Parse input
+                    if len(new_files) < 10:
+                        # Parse as consecutive digits
+                        for char in gitignore_input:
+                            try:
+                                index = int(char) - 1
+                                if 0 <= index < len(new_files):
+                                    files_to_gitignore.append(new_files[index])
+                            except ValueError:
+                                continue
+                    else:
+                        # Parse as numbers separated by \
+                        indices = gitignore_input.split('\\')
+                        for idx_str in indices:
+                            try:
+                                index = int(idx_str.strip()) - 1
+                                if 0 <= index < len(new_files):
+                                    files_to_gitignore.append(new_files[index])
+                            except ValueError:
+                                continue
+                
+                if files_to_gitignore:
+                    self.git_ops.add_to_gitignore(files_to_gitignore)
+                    print(f"\nДобавлено {len(files_to_gitignore)} файл(ов) в .gitignore")
+            else:
                 print("\nНеверный выбор. Скрипт завершен.")
                 return True
-            
-            # Ask which files to add
-            print("\nВведите номера файлов для добавления в git:")
-            print("- Если файлов < 10: введите номера подряд (например: 14589)")
-            print("- Если файлов >= 10: введите номера через \\ (например: 1\\2\\4\\5\\9)")
-            print("- Нажмите Enter чтобы добавить все файлы")
-            
-            files_input = input("Номера файлов: ").strip()
-            
-            files_to_add = []
-            if not files_input:
-                # Add all files
-                files_to_add = new_files
-            else:
-                # Parse input
-                if len(new_files) < 10:
-                    # Parse as consecutive digits
-                    for char in files_input:
-                        try:
-                            index = int(char) - 1
-                            if 0 <= index < len(new_files):
-                                files_to_add.append(new_files[index])
-                        except ValueError:
-                            continue
-                else:
-                    # Parse as numbers separated by \
-                    indices = files_input.split('\\')
-                    for idx_str in indices:
-                        try:
-                            index = int(idx_str.strip()) - 1
-                            if 0 <= index < len(new_files):
-                                files_to_add.append(new_files[index])
-                        except ValueError:
-                            continue
-            
-            if files_to_add:
-                self.git_ops.add_files(files_to_add)
-                print(f"\nДобавлено {len(files_to_add)} файл(ов) в git")
-            
-            # Check if there are remaining files to add to gitignore
-            remaining_files = [f for f in new_files if f not in files_to_add]
-            
-            if remaining_files:
-                print(f"\nОсталось {len(remaining_files)} файл(ов) не добавленных в git:")
-                for i, file_path in enumerate(remaining_files, 1):
-                    print(f"  {i}. {file_path}")
-                
-                add_to_gitignore = input("\nДобавить эти файлы в .gitignore? (Y/n): ").strip().lower()
-                
-                if add_to_gitignore != 'n':
-                    print("\nВведите номера файлов для добавления в .gitignore:")
-                    print("- Если файлов < 10: введите номера подряд (например: 189)")
-                    print("- Если файлов >= 10: введите номера через \\ (например: 1\\8\\9\\11\\18)")
-                    print("- Нажмите Enter чтобы добавить все файлы")
-                    
-                    gitignore_input = input("Номера файлов: ").strip()
-                    
-                    files_to_gitignore = []
-                    if not gitignore_input:
-                        # Add all remaining files
-                        files_to_gitignore = remaining_files
-                    else:
-                        # Parse input
-                        if len(remaining_files) < 10:
-                            # Parse as consecutive digits
-                            for char in gitignore_input:
-                                try:
-                                    index = int(char) - 1
-                                    if 0 <= index < len(remaining_files):
-                                        files_to_gitignore.append(remaining_files[index])
-                                except ValueError:
-                                    continue
-                        else:
-                            # Parse as numbers separated by \
-                            indices = gitignore_input.split('\\')
-                            for idx_str in indices:
-                                try:
-                                    index = int(idx_str.strip()) - 1
-                                    if 0 <= index < len(remaining_files):
-                                        files_to_gitignore.append(remaining_files[index])
-                                except ValueError:
-                                    continue
-                    
-                    if files_to_gitignore:
-                        self.git_ops.add_to_gitignore(files_to_gitignore)
-                        print(f"\nДобавлено {len(files_to_gitignore)} файл(ов) в .gitignore")
             
             # Re-analyze changes after adding files
             analysis = self.change_analyzer.analyze_changes()
