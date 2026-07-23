@@ -181,7 +181,20 @@ class GitOperations:
                 continue
             
             status_code = line[:2]
-            file_path = line[3:]
+            # File path starts after the 2-char status code
+            # Handle renamed files which have format: R100\told_file\tnew_file
+            if '\t' in line:
+                parts = line.split('\t')
+                file_path = parts[-1]  # Get the last part (new file for renames)
+            else:
+                # Standard format: XY filename (where XY is 2-char status code)
+                # Strip the status code and any leading whitespace
+                file_path = line[2:].lstrip() if len(line) > 2 else ''
+            
+            if not file_path:
+                continue
+            
+            self.logger.debug(f"Status line: '{line}' -> status_code: '{status_code}', file_path: '{file_path}'")
             
             if status_code == '??':
                 untracked_files.append(file_path)
