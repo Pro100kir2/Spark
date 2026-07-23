@@ -45,7 +45,7 @@ class BranchNameGenerator:
         # Generate the descriptive part
         description = self._generate_description(analysis)
         
-        # Use only the description for branch name (no type prefix)
+        # Use only description for branch name (type prefix only in commit messages)
         branch_name = description
         
         # Sanitize the branch name
