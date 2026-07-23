@@ -6,6 +6,7 @@ Coordinates all modules to implement the complete workflow.
 
 from typing import Optional, List
 from pathlib import Path
+import time
 
 from .logger import Logger
 from .error_handler import (
@@ -96,10 +97,22 @@ class Orchestrator:
             
             if existing_branch:
                 # Continue existing workflow
-                return self._continue_existing_workflow(existing_branch)
+                result = self._continue_existing_workflow(existing_branch)
+                
+                # Start monitoring after workflow (automatic)
+                if result:
+                    self._monitor_pull_requests()
+                
+                return result
             else:
                 # Start new workflow
-                return self._start_new_workflow()
+                result = self._start_new_workflow()
+                
+                # Start monitoring after workflow (automatic)
+                if result:
+                    self._monitor_pull_requests()
+                
+                return result
                 
         except (GitAutomationError, GitOperationError, GitHubError) as e:
             error_msg = self.error_handler.handle_error(e, "workflow execution")
@@ -418,6 +431,100 @@ class Orchestrator:
                         self.logger.warning(f"Не удалось удалить ветку {branch}: {e}")
         except Exception as e:
             self.logger.warning(f"Не удалось выполнить очистку веток: {e}")
+    
+    def _monitor_pull_requests(self) -> None:
+        """
+        Monitor PR status and automatically delete merged branches.
+        Runs in a loop checking PR status with exponential backoff intervals.
+        Intervals: 10s, 15s, 30s, 1m, 5m, 15m, 45m, 2h
+        """
+        self.logger.step("Запуск автоматического мониторинга PR")
+        self.logger.info("Интервалы проверки: 10s, 15s, 30s, 1m, 5m, 15m, 45m, 2h")
+        self.logger.info("Нажмите Ctrl+C для остановки мониторинга")
+        
+        main_branches = ['main', 'master', 'develop']
+        
+        # Exponential backoff intervals in seconds
+        intervals = [10, 15, 30, 60, 300, 900, 2700, 7200]  # 10s, 15s, 30s, 1m, 5m, 15m, 45m, 2h
+        interval_index = 0
+        
+        try:
+            while True:
+                # Get current branch
+                current_branch = self.git_ops.get_current_branch()
+                
+                # Check if we're on a feature branch
+                if current_branch not in main_branches:
+                    # Check PR status for current branch
+                    pr_state = self.github_client.get_pull_request_state(current_branch)
+                    
+                    if pr_state == PRState.MERGED:
+                        self.logger.info(f"PR для ветки {current_branch} был слит")
+                        self.logger.info("Удаляем ветку и переключаемся на main")
+                        
+                        try:
+                            # Switch to main
+                            self.git_ops.checkout_branch('main')
+                            self.logger.info("Переключились на ветку main")
+                            
+                            # Update main
+                            try:
+                                self.git_ops.pull_rebase()
+                                self.logger.info("Ветка main обновлена")
+                            except GitOperationError as e:
+                                self.logger.warning(f"Не удалось обновить main: {e}")
+                            
+                            # Delete local branch
+                            self.git_ops.delete_local_branch(current_branch, force=False)
+                            self.logger.success(f"Ветка {current_branch} удалена локально")
+                            
+                            # Delete remote branch with detailed logging
+                            self.logger.info(f"Удаление удалённой ветки origin/{current_branch}")
+                            try:
+                                self.git_ops.delete_remote_branch(current_branch)
+                                self.logger.success(f"✓ Удалена удалённая ветка origin/{current_branch}")
+                            except GitOperationError as e:
+                                self.logger.error(f"✗ Не удалось удалить удалённую ветку origin/{current_branch}: {e}")
+                            
+                            # Exit monitoring after successful cleanup
+                            self.logger.info("Мониторинг завершён после удаления слитой ветки")
+                            return
+                            
+                        except GitOperationError as e:
+                            self.logger.error(f"Ошибка при удалении ветки: {e}")
+                            return
+                    elif pr_state == PRState.NOT_FOUND:
+                        self.logger.debug(f"PR для ветки {current_branch} не найден")
+                    else:
+                        self.logger.debug(f"PR для ветки {current_branch} в состоянии: {pr_state}")
+                
+                # Check all other branches for merged PRs
+                self._cleanup_merged_branches(main_branches)
+                
+                # Get current interval
+                current_interval = intervals[interval_index]
+                
+                # Format interval for logging
+                if current_interval >= 3600:
+                    interval_str = f"{current_interval // 3600}ч"
+                elif current_interval >= 60:
+                    interval_str = f"{current_interval // 60}м"
+                else:
+                    interval_str = f"{current_interval}с"
+                
+                self.logger.debug(f"Следующая проверка через {interval_str}")
+                
+                # Wait for next check
+                time.sleep(current_interval)
+                
+                # Move to next interval (cap at max)
+                if interval_index < len(intervals) - 1:
+                    interval_index += 1
+                
+        except KeyboardInterrupt:
+            self.logger.info("Мониторинг остановлен пользователем")
+        except Exception as e:
+            self.logger.error(f"Ошибка в режиме мониторинга: {e}")
     
     def _continue_existing_workflow(self, branch_name: str) -> bool:
         """
