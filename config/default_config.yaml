@@ -1,0 +1,76 @@
+# Git Automation Script Configuration
+
+# GitHub settings
+github:
+  # Polling interval for PR monitoring (seconds)
+  pr_poll_interval: 60
+  
+  # Create draft PRs by default
+  draft_prs: false
+
+# Git settings
+git:
+  # Default branch names (for detection)
+  main_branches:
+    - main
+    - master
+    - develop
+
+# Branch naming
+branch_naming:
+  # Maximum length for branch names (Git Flow convention: ~40 chars)
+  max_length: 40
+  
+  # Reserved branch names that should not be used
+  reserved_names:
+    - head
+    - main
+    - master
+    - develop
+
+# Commit message settings
+commit:
+  # Maximum length for commit message description (Git standard: 72 chars)
+  max_description_length: 72
+  
+  # Language for commit messages (industry standard: en)
+  language: en
+
+# Pre-commit hooks
+pre_commit:
+  # Enable pre-commit hooks
+  enabled: true
+  
+  # Commands to run before commit
+  commands:
+    - ruff check .
+    - black --check .
+    - isort --check .
+    - pytest
+
+# Security settings
+security:
+  # Sensitive files that should not be committed without explicit confirmation
+  sensitive_files:
+    - .env
+    - .gitignore
+    - .idea
+    - .vscode
+    - node_modules
+    - dist
+    - build
+    - coverage
+    - __pycache__
+    - .venv
+    - venv
+
+# Logging settings
+logging:
+  # Default log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  level: INFO
+  
+  # Log format
+  format: "%(asctime)s - %(levelname)s - %(message)s"
+  
+  # Date format
+  date_format: "%Y-%m-%d %H:%M:%S"
