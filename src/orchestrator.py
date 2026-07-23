@@ -361,15 +361,16 @@ class Orchestrator:
                         self.git_ops.delete_local_branch(current_branch, force=False)
                         self.logger.success(f"Ветка {current_branch} удалена локально")
                         
-                        # Delete remote branch
+                        # Also delete remote branch
                         try:
                             self.git_ops.delete_remote_branch(current_branch)
                             self.logger.success(f"Удалена удалённая ветка origin/{current_branch}")
                         except GitOperationError as e:
                             self.logger.warning(f"Не удалось удалить удалённую ветку: {e}")
                         
-                        # Return None to trigger new workflow
-                        return None
+                        # Switch to main branch after deletion
+                        self.git_ops.checkout_branch('main')
+                        self.logger.info("Переключились на ветку main")
                     except GitOperationError as e:
                         self.logger.warning(f"Не удалось удалить ветку {current_branch}: {e}")
                         # Still return None to trigger new workflow even if deletion failed
@@ -377,7 +378,46 @@ class Orchestrator:
                 
                 return current_branch
         
+        # Also check for other merged branches and clean them up
+        self._cleanup_merged_branches(main_branches)
+        
         return None
+    
+    def _cleanup_merged_branches(self, main_branches: List[str]) -> None:
+        """
+        Clean up branches whose PRs have been merged.
+        
+        Args:
+            main_branches: List of main branch names to skip.
+        """
+        try:
+            # Get all local branches
+            all_branches = self.git_ops.get_all_branches()
+            
+            for branch in all_branches:
+                if branch in main_branches:
+                    continue
+                
+                # Check if this branch has a merged PR
+                pr_state = self.github_client.get_pull_request_state(branch)
+                
+                if pr_state == PRState.MERGED:
+                    self.logger.info(f"Обнаружена слитая ветка: {branch}")
+                    try:
+                        # Delete local branch
+                        self.git_ops.delete_local_branch(branch, force=False)
+                        self.logger.success(f"Ветка {branch} удалена локально")
+                        
+                        # Delete remote branch
+                        try:
+                            self.git_ops.delete_remote_branch(branch)
+                            self.logger.success(f"Удалена удалённая ветка origin/{branch}")
+                        except GitOperationError as e:
+                            self.logger.warning(f"Не удалось удалить удалённую ветку: {e}")
+                    except GitOperationError as e:
+                        self.logger.warning(f"Не удалось удалить ветку {branch}: {e}")
+        except Exception as e:
+            self.logger.warning(f"Не удалось выполнить очистку веток: {e}")
     
     def _continue_existing_workflow(self, branch_name: str) -> bool:
         """
@@ -833,12 +873,21 @@ class Orchestrator:
             self.logger.info(f"PR уже существует: #{existing_pr.number}")
             return
         
+        # Check if branch has commits ahead of base
+        try:
+            base_branch = self.github_client.get_default_branch()
+            ahead_count = self.git_ops.get_commit_count_ahead(branch_name, base_branch)
+            if ahead_count == 0:
+                self.logger.warning(f"Ветка {branch_name} не имеет коммитов относительно {base_branch}")
+                self.logger.info("Pull Request не может быть создан без изменений")
+                return
+        except Exception as e:
+            self.logger.warning(f"Не удалось проверить количество коммитов: {e}")
+            # Continue anyway, let GitHub API handle the error
+        
         # Generate PR title and body
         pr_title = commit_message.split(': ', 1)[1] if ': ' in commit_message else commit_message
         pr_body = self._generate_pr_body(analysis)
-        
-        # Get default branch
-        base_branch = self.github_client.get_default_branch()
         
         # Create PR
         self.github_client.create_pull_request(
