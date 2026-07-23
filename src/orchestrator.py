@@ -6,6 +6,7 @@ Coordinates all modules to implement the complete workflow.
 
 from typing import Optional, List
 from pathlib import Path
+import time
 
 from .logger import Logger
 from .error_handler import (
