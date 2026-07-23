@@ -765,6 +765,12 @@ class Orchestrator:
                 else:
                     self.logger.info("Новые файлы не добавлены (используйте --interactive для подтверждения)")
         
+        # Check if there are any staged changes before committing
+        status_after = self.git_ops.get_status()
+        if not status_after.staged_files and not status_after.has_changes:
+            self.logger.info("Нет изменений для коммита. Пропускаем коммит.")
+            return
+        
         # Commit
         self.git_ops.commit(commit_message, amend=amend)
     
