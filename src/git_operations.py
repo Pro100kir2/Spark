@@ -444,6 +444,20 @@ class GitOperations:
             self._run_git_command(['git', 'pull'])
         self.logger.success("Pulled latest changes")
     
+    def pull_rebase(self, branch: str = '') -> None:
+        """
+        Pull latest changes from remote using rebase.
+        
+        Args:
+            branch: Branch to pull (empty for current branch).
+        """
+        self.logger.debug("Executing git pull --rebase")
+        if branch:
+            self._run_git_command(['git', 'pull', '--rebase', 'origin', branch])
+        else:
+            self._run_git_command(['git', 'pull', '--rebase'])
+        self.logger.success("Pulled latest changes with rebase")
+    
     def reset_hard(self, ref: str, force: bool = False) -> None:
         """
         Hard reset to a reference (DANGEROUS OPERATION).
