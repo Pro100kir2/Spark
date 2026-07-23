@@ -745,6 +745,7 @@ class Orchestrator:
         # Add only tracked files (modified) - combine staged and unstaged
         modified_files = status.staged_files + status.unstaged_files
         if modified_files:
+            self.logger.debug(f"Attempting to add files: {modified_files}")
             self.git_ops.add_files(modified_files)
             self.logger.info(f"Added {len(modified_files)} modified file(s)")
         
