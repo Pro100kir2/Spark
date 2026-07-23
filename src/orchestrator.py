@@ -341,6 +341,16 @@ class Orchestrator:
             
             if pr_state != PRState.NOT_FOUND:
                 self.logger.info(f"Обнаружен существующий PR для ветки {current_branch}")
+                
+                # If PR is merged, delete the branch
+                if pr_state == PRState.MERGED:
+                    self.logger.info(f"PR для ветки {current_branch} был слит. Удаляем ветку.")
+                    try:
+                        self.git_ops.delete_local_branch(current_branch, force=False)
+                        self.logger.success(f"Ветка {current_branch} удалена локально")
+                    except GitOperationError as e:
+                        self.logger.warning(f"Не удалось удалить ветку {current_branch}: {e}")
+                
                 return current_branch
         
         return None

@@ -234,6 +234,10 @@ class GitOperations:
                 status_code = parts[0]
                 file_path = parts[1]
                 
+                # Handle renamed files (format: R100\told\tnew)
+                if status_code.startswith('R') and len(parts) >= 3:
+                    file_path = parts[2]  # Use the new path
+                
                 status_map = {
                     'A': 'added',
                     'D': 'deleted',
@@ -243,7 +247,7 @@ class GitOperations:
                 
                 changes.append(FileChange(
                     path=file_path,
-                    status=status_map.get(status_code, 'modified')
+                    status=status_map.get(status_code[0], 'modified')
                 ))
         
         return changes
@@ -332,10 +336,12 @@ class GitOperations:
                     self._run_git_command(['git', 'rm', file_path])
                     added_count += 1
                 except GitOperationError:
-                    # File might not be tracked, ignore deletion
+                    # File might not be tracked, ignore deletion completely
                     self.logger.debug(f"File {file_path} not tracked, skipping deletion")
         if added_count > 0:
             self.logger.success(f"Added {added_count} file(s) to staging area")
+        else:
+            self.logger.info("No files were added to staging area")
     
     def add_all_changes(self) -> None:
         """Add all changes to staging area."""
