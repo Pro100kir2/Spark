@@ -372,8 +372,9 @@ class Orchestrator:
                         except GitOperationError as e:
                             self.logger.warning(f"Не удалось обновить main: {e}")
 
-                        # Delete local branch
-                        self.git_ops.delete_local_branch(current_branch, force=False)
+                        # Delete local branch with force since PR is confirmed merged
+                        # Git may think branch is not fully merged to remote even though PR is merged
+                        self.git_ops.delete_local_branch(current_branch, force=True)
                         self.logger.success(f"Ветка {current_branch} удалена локально")
                         
                         # Also delete remote branch
@@ -426,8 +427,9 @@ class Orchestrator:
                 if pr_state == PRState.MERGED:
                     self.logger.info(f"Обнаружена слитая ветка: {branch}")
                     try:
-                        # Delete local branch
-                        self.git_ops.delete_local_branch(branch, force=False)
+                        # Delete local branch with force since PR is confirmed merged
+                        # Git may think branch is not fully merged to remote even though PR is merged
+                        self.git_ops.delete_local_branch(branch, force=True)
                         self.logger.success(f"Ветка {branch} удалена локально")
                         
                         # Delete remote branch
@@ -490,8 +492,9 @@ class Orchestrator:
                             except GitOperationError as e:
                                 self.logger.warning(f"Не удалось обновить main: {e}")
 
-                            # Delete local branch
-                            self.git_ops.delete_local_branch(current_branch, force=False)
+                            # Delete local branch with force since PR is confirmed merged
+                            # Git may think branch is not fully merged to remote even though PR is merged
+                            self.git_ops.delete_local_branch(current_branch, force=True)
                             self.logger.success(f"Ветка {current_branch} удалена локально")
 
                             # Delete remote branch with detailed logging
