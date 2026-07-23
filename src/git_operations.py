@@ -234,6 +234,10 @@ class GitOperations:
                 status_code = parts[0]
                 file_path = parts[1]
                 
+                # Handle renamed files (format: R100\told\tnew)
+                if status_code.startswith('R') and len(parts) >= 3:
+                    file_path = parts[2]  # Use the new path
+                
                 status_map = {
                     'A': 'added',
                     'D': 'deleted',
@@ -243,7 +247,7 @@ class GitOperations:
                 
                 changes.append(FileChange(
                     path=file_path,
-                    status=status_map.get(status_code, 'modified')
+                    status=status_map.get(status_code[0], 'modified')
                 ))
         
         return changes
