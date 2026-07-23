@@ -96,10 +96,22 @@ class Orchestrator:
             
             if existing_branch:
                 # Continue existing workflow
-                return self._continue_existing_workflow(existing_branch)
+                result = self._continue_existing_workflow(existing_branch)
+                
+                # Start monitoring after workflow (automatic)
+                if result:
+                    self._monitor_pull_requests()
+                
+                return result
             else:
                 # Start new workflow
-                return self._start_new_workflow()
+                result = self._start_new_workflow()
+                
+                # Start monitoring after workflow (automatic)
+                if result:
+                    self._monitor_pull_requests()
+                
+                return result
                 
         except (GitAutomationError, GitOperationError, GitHubError) as e:
             error_msg = self.error_handler.handle_error(e, "workflow execution")
