@@ -45,8 +45,8 @@ class BranchNameGenerator:
         # Generate the descriptive part
         description = self._generate_description(analysis)
         
-        # Combine type and description
-        branch_name = f"{change_type}/{description}"
+        # Combine type and description with colon
+        branch_name = f"{change_type}:{description}"
         
         # Sanitize the branch name
         branch_name = self._sanitize_branch_name(branch_name)
