@@ -45,8 +45,8 @@ class BranchNameGenerator:
         # Generate the descriptive part
         description = self._generate_description(analysis)
         
-        # Combine type and description with colon (no space after colon for Git compatibility)
-        branch_name = f"{change_type}:{description}"
+        # Use only description for branch name (type prefix only in commit messages)
+        branch_name = description
         
         # Sanitize the branch name
         branch_name = self._sanitize_branch_name(branch_name)
