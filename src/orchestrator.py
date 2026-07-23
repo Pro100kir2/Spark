@@ -856,12 +856,21 @@ class Orchestrator:
             self.logger.info(f"PR уже существует: #{existing_pr.number}")
             return
         
+        # Check if branch has commits ahead of base
+        try:
+            base_branch = self.github_client.get_default_branch()
+            ahead_count = self.git_ops.get_commit_count_ahead(branch_name, base_branch)
+            if ahead_count == 0:
+                self.logger.warning(f"Ветка {branch_name} не имеет коммитов относительно {base_branch}")
+                self.logger.info("Pull Request не может быть создан без изменений")
+                return
+        except Exception as e:
+            self.logger.warning(f"Не удалось проверить количество коммитов: {e}")
+            # Continue anyway, let GitHub API handle the error
+        
         # Generate PR title and body
         pr_title = commit_message.split(': ', 1)[1] if ': ' in commit_message else commit_message
         pr_body = self._generate_pr_body(analysis)
-        
-        # Get default branch
-        base_branch = self.github_client.get_default_branch()
         
         # Create PR
         self.github_client.create_pull_request(
