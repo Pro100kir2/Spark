@@ -311,9 +311,26 @@ class GitOperations:
             self.logger.success(f"Created and switched to branch: {branch_name}")
         except GitOperationError as e:
             if "already exists" in str(e):
-                # Branch already exists, just checkout to it
-                self._run_git_command(['git', 'checkout', branch_name])
-                self.logger.success(f"Switched to existing branch: {branch_name}")
+                # Branch already exists, try to checkout
+                try:
+                    self._run_git_command(['git', 'checkout', branch_name])
+                    self.logger.success(f"Switched to existing branch: {branch_name}")
+                except GitOperationError as checkout_error:
+                    if "would be overwritten" in str(checkout_error) or "local changes" in str(checkout_error):
+                        # Stash changes before switching
+                        self.logger.info("Stashing local changes before switching branches")
+                        self._run_git_command(['git', 'stash'])
+                        self._run_git_command(['git', 'checkout', branch_name])
+                        self.logger.success(f"Switched to existing branch: {branch_name} (changes stashed)")
+                        # Pop stash after switching - this should work since we're on a different branch
+                        try:
+                            self._run_git_command(['git', 'stash', 'pop'])
+                            self.logger.info("Applied stashed changes")
+                        except GitOperationError as stash_error:
+                            self.logger.warning(f"Could not apply stashed changes: {stash_error}")
+                            self.logger.info("Changes remain in stash. You can apply them manually with 'git stash pop'")
+                    else:
+                        raise
             else:
                 raise
     
@@ -572,6 +589,26 @@ class GitOperations:
         """
         output = self._run_git_command(['git', 'branch', '--format=%(refname:short)'])
         return [b for b in output.split('\n') if b]
+    
+    def get_commit_count_ahead(self, branch: str, base_branch: str) -> int:
+        """
+        Get the number of commits a branch is ahead of the base branch.
+        
+        Args:
+            branch: The branch to check.
+            base_branch: The base branch to compare against.
+            
+        Returns:
+            Number of commits ahead.
+        """
+        try:
+            output = self._run_git_command(
+                ['git', 'rev-list', '--count', f'{base_branch}..{branch}'],
+                ignore_dry_run=True
+            )
+            return int(output.strip()) if output.strip() else 0
+        except (GitOperationError, ValueError):
+            return 0
     
     def is_detached_head(self) -> bool:
         """
