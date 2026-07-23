@@ -53,6 +53,7 @@ class BranchNameGenerator:
         
         self.logger.info(f"Generated branch name: {branch_name}")
         return branch_name
+
     
     def _generate_description(self, analysis: ChangeAnalysis) -> str:
         """

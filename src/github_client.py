@@ -254,12 +254,16 @@ class GitHubClient:
             PullRequest object if found, None otherwise.
         """
         try:
+            self.logger.debug(f"Searching for PR with head branch: {branch_name}")
             output = self._run_gh_command([
                 'gh', 'pr', 'list',
                 '--head', branch_name,
-                '--json', 'number,title,state,headRefName,baseRefName,url,body',
+                '--state', 'all',  # Include open, closed, and merged PRs
+                '--json', 'number,title,state,headRefName,baseRefName,url,body,mergedAt,closedAt',
                 '--limit', '1'
             ], check=True)
+            
+            self.logger.debug(f"gh pr list output for branch {branch_name}: {output[:200] if output else 'empty'}")
             
             if not output:
                 return None
@@ -270,6 +274,8 @@ class GitHubClient:
             
             pr_data = data[0]
             
+            self.logger.debug(f"PR found: #{pr_data['number']}, state: {pr_data['state']}, mergedAt: {pr_data.get('mergedAt')}, closedAt: {pr_data.get('closedAt')}")
+            
             # Map state
             state_map = {
                 'OPEN': PRState.OPEN,
@@ -277,16 +283,23 @@ class GitHubClient:
                 'MERGED': PRState.MERGED
             }
             
+            mapped_state = state_map.get(pr_data['state'], PRState.NOT_FOUND)
+            self.logger.debug(f"Mapped state: {mapped_state}")
+            
             return PullRequest(
                 number=pr_data['number'],
                 title=pr_data['title'],
-                state=state_map.get(pr_data['state'], PRState.NOT_FOUND),
+                state=mapped_state,
                 head_branch=pr_data['headRefName'],
                 base_branch=pr_data['baseRefName'],
                 url=pr_data['url'],
                 body=pr_data.get('body', '')
             )
-        except GitHubError:
+        except GitHubError as e:
+            self.logger.debug(f"GitHubError while searching PR for branch {branch_name}: {e}")
+            return None
+        except json.JSONDecodeError as e:
+            self.logger.debug(f"JSON decode error while searching PR for branch {branch_name}: {e}")
             return None
     
     def get_pull_request_state(self, branch_name: str) -> PRState:
