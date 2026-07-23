@@ -653,8 +653,126 @@ class Orchestrator:
         
         if not analysis.added_files and not analysis.modified_files and not analysis.deleted_files:
             self.logger.info("Нет изменений для коммита. Рабочая директория чиста.")
-            print("\nНет изменений для коммита. Рабочая директория чиста.")
-            return True  # Not an error, just nothing to do
+            
+            # Check for new files not in gitignore
+            new_files = self.git_ops.get_new_files_not_in_gitignore()
+            
+            if not new_files:
+                print("\nНет изменений для коммита. Рабочая директория чиста.")
+                return True  # Not an error, just nothing to do
+            
+            # Interactive mode for handling new files
+            print("\nНет изменений в существующих файлах, но обнаружены новые файлы:")
+            print(f"Найдено {len(new_files)} новых файлов:")
+            for i, file_path in enumerate(new_files, 1):
+                print(f"  {i}. {file_path}")
+            
+            print("\nВыберите действие:")
+            print("1) Добавить файлы в git")
+            print("2) Завершить скрипт")
+            
+            choice = input("\nВаш выбор (1/2): ").strip()
+            
+            if choice == '2':
+                print("\nСкрипт завершен.")
+                return True
+            
+            if choice != '1':
+                print("\nНеверный выбор. Скрипт завершен.")
+                return True
+            
+            # Ask which files to add
+            print("\nВведите номера файлов для добавления в git:")
+            print("- Если файлов < 10: введите номера подряд (например: 14589)")
+            print("- Если файлов >= 10: введите номера через \\ (например: 1\\2\\4\\5\\9)")
+            print("- Нажмите Enter чтобы добавить все файлы")
+            
+            files_input = input("Номера файлов: ").strip()
+            
+            files_to_add = []
+            if not files_input:
+                # Add all files
+                files_to_add = new_files
+            else:
+                # Parse input
+                if len(new_files) < 10:
+                    # Parse as consecutive digits
+                    for char in files_input:
+                        try:
+                            index = int(char) - 1
+                            if 0 <= index < len(new_files):
+                                files_to_add.append(new_files[index])
+                        except ValueError:
+                            continue
+                else:
+                    # Parse as numbers separated by \
+                    indices = files_input.split('\\')
+                    for idx_str in indices:
+                        try:
+                            index = int(idx_str.strip()) - 1
+                            if 0 <= index < len(new_files):
+                                files_to_add.append(new_files[index])
+                        except ValueError:
+                            continue
+            
+            if files_to_add:
+                self.git_ops.add_files(files_to_add)
+                print(f"\nДобавлено {len(files_to_add)} файл(ов) в git")
+            
+            # Check if there are remaining files to add to gitignore
+            remaining_files = [f for f in new_files if f not in files_to_add]
+            
+            if remaining_files:
+                print(f"\nОсталось {len(remaining_files)} файл(ов) не добавленных в git:")
+                for i, file_path in enumerate(remaining_files, 1):
+                    print(f"  {i}. {file_path}")
+                
+                add_to_gitignore = input("\nДобавить эти файлы в .gitignore? (Y/n): ").strip().lower()
+                
+                if add_to_gitignore != 'n':
+                    print("\nВведите номера файлов для добавления в .gitignore:")
+                    print("- Если файлов < 10: введите номера подряд (например: 189)")
+                    print("- Если файлов >= 10: введите номера через \\ (например: 1\\8\\9\\11\\18)")
+                    print("- Нажмите Enter чтобы добавить все файлы")
+                    
+                    gitignore_input = input("Номера файлов: ").strip()
+                    
+                    files_to_gitignore = []
+                    if not gitignore_input:
+                        # Add all remaining files
+                        files_to_gitignore = remaining_files
+                    else:
+                        # Parse input
+                        if len(remaining_files) < 10:
+                            # Parse as consecutive digits
+                            for char in gitignore_input:
+                                try:
+                                    index = int(char) - 1
+                                    if 0 <= index < len(remaining_files):
+                                        files_to_gitignore.append(remaining_files[index])
+                                except ValueError:
+                                    continue
+                        else:
+                            # Parse as numbers separated by \
+                            indices = gitignore_input.split('\\')
+                            for idx_str in indices:
+                                try:
+                                    index = int(idx_str.strip()) - 1
+                                    if 0 <= index < len(remaining_files):
+                                        files_to_gitignore.append(remaining_files[index])
+                                except ValueError:
+                                    continue
+                    
+                    if files_to_gitignore:
+                        self.git_ops.add_to_gitignore(files_to_gitignore)
+                        print(f"\nДобавлено {len(files_to_gitignore)} файл(ов) в .gitignore")
+            
+            # Re-analyze changes after adding files
+            analysis = self.change_analyzer.analyze_changes()
+            
+            if not analysis.added_files and not analysis.modified_files and not analysis.deleted_files:
+                print("\nНет изменений для коммита. Рабочая директория чиста.")
+                return True
         
         self.logger.success("Изменения обнаружены")
         

@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
+import os
 
 from .logger import Logger
 from .error_handler import (
@@ -649,3 +650,76 @@ class GitOperations:
             return False
         except GitOperationError:
             return True
+    
+    def get_untracked_files(self) -> List[str]:
+        """
+        Get list of untracked files.
+        
+        Returns:
+            List of untracked file paths.
+        """
+        status = self.get_status()
+        return status.untracked_files
+    
+    def is_file_in_gitignore(self, file_path: str) -> bool:
+        """
+        Check if a file is ignored by .gitignore.
+        
+        Args:
+            file_path: Path to check.
+            
+        Returns:
+            True if file is ignored, False otherwise.
+        """
+        try:
+            # Use git check-ignore to check if file is ignored
+            self._run_git_command(['git', 'check-ignore', '-q', file_path], ignore_dry_run=True)
+            return True
+        except GitOperationError:
+            return False
+    
+    def get_new_files_not_in_gitignore(self) -> List[str]:
+        """
+        Get list of untracked files that are not in .gitignore.
+        
+        Returns:
+            List of file paths.
+        """
+        untracked = self.get_untracked_files()
+        return [f for f in untracked if not self.is_file_in_gitignore(f)]
+    
+    def add_files(self, file_paths: List[str]) -> None:
+        """
+        Add files to staging area.
+        
+        Args:
+            file_paths: List of file paths to add.
+        """
+        for file_path in file_paths:
+            self._run_git_command(['git', 'add', file_path])
+        self.logger.success(f"Added {len(file_paths)} file(s) to staging area")
+    
+    def add_to_gitignore(self, file_paths: List[str]) -> None:
+        """
+        Add files to .gitignore.
+        
+        Args:
+            file_paths: List of file paths to add.
+        """
+        gitignore_path = Path('.gitignore')
+        
+        # Read existing .gitignore
+        existing_lines = []
+        if gitignore_path.exists():
+            with open(gitignore_path, 'r') as f:
+                existing_lines = f.readlines()
+        
+        # Add new files to .gitignore
+        with open(gitignore_path, 'a') as f:
+            for file_path in file_paths:
+                # Check if file is already in .gitignore
+                if not any(line.strip() == file_path for line in existing_lines):
+                    f.write(f"{file_path}\n")
+                    self.logger.debug(f"Added {file_path} to .gitignore")
+        
+        self.logger.success(f"Added {len(file_paths)} file(s) to .gitignore")
