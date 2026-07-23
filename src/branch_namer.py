@@ -309,8 +309,8 @@ class BranchNameGenerator:
         # Replace spaces and underscores with hyphens
         name = re.sub(r'[\s_]+', '-', name)
         
-        # Remove special characters except hyphens
-        name = re.sub(r'[^a-z0-9-]', '', name)
+        # Remove special characters except hyphens and colons
+        name = re.sub(r'[^a-z0-9-:]', '', name)
         
         # Remove consecutive hyphens
         name = re.sub(r'-+', '-', name)
