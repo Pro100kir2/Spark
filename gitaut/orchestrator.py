@@ -1072,7 +1072,9 @@ class Orchestrator:
         status = self.git_ops.get_status()
         
         # Add only tracked files (modified) - combine staged and unstaged
-        modified_files = status.staged_files + status.unstaged_files
+        # Filter out deleted files - they don't exist and can't be added
+        modified_files = [f for f in status.staged_files + status.unstaged_files 
+                         if not self._is_deleted_file(f)]
         if modified_files:
             self.logger.debug(f"Attempting to add files: {modified_files}")
             self.logger.debug(f"Staged files: {status.staged_files}")
@@ -1115,6 +1117,18 @@ class Orchestrator:
         
         # Commit
         self.git_ops.commit(commit_message, amend=amend)
+    
+    def _is_deleted_file(self, file_path: str) -> bool:
+        """
+        Check if a file path corresponds to a deleted file.
+        
+        Args:
+            file_path: File path to check.
+            
+        Returns:
+            True if file is deleted (doesn't exist), False otherwise.
+        """
+        return not Path(file_path).exists()
     
     def _create_pull_request(
         self,
