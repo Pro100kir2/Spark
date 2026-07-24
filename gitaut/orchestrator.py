@@ -362,22 +362,35 @@ class Orchestrator:
                     self.logger.info(f"PR для ветки {current_branch} был слит. Удаляем ветку.")
                     try:
                         # Switch to main branch first (cannot delete current branch)
-                        self.git_ops.checkout_branch('main')
-                        self.logger.info("Переключились на ветку main")
+                        try:
+                            self.git_ops.checkout_branch('main')
+                            self.logger.success("Переключились на ветку main")
+                        except GitOperationError as e:
+                            self.logger.error(f"Не удалось переключиться на main: {e}")
+                            raise
 
                         # Update main branch - stash changes if needed
                         try:
                             status = self.git_ops.get_status()
                             if status.has_changes:
                                 self.logger.info("Stashing local changes before pulling main")
-                                self.git_ops.stash_changes()
-                            self.git_ops.pull_rebase()
-                            self.logger.info("Ветка main обновлена")
+                                try:
+                                    self.git_ops.stash_changes()
+                                    self.logger.success("Changes stashed successfully")
+                                except GitOperationError as e:
+                                    self.logger.error(f"Не удалось сохранить изменения в stash: {e}")
+                                    raise
+                            try:
+                                self.git_ops.pull_rebase()
+                                self.logger.success("Ветка main обновлена")
+                            except GitOperationError as e:
+                                self.logger.error(f"Не удалось обновить main: {e}")
+                                raise
                             # Pop stash if we stashed
                             if status.has_changes:
                                 try:
                                     self.git_ops.pop_stash()
-                                    self.logger.info("Restored stashed changes")
+                                    self.logger.success("Restored stashed changes")
                                 except GitOperationError as e:
                                     self.logger.warning(f"Could not restore stashed changes: {e}")
                         except GitOperationError as e:
@@ -385,8 +398,12 @@ class Orchestrator:
 
                         # Delete local branch with force since PR is confirmed merged
                         # Git may think branch is not fully merged to remote even though PR is merged
-                        self.git_ops.delete_local_branch(current_branch, force=True)
-                        self.logger.success(f"Ветка {current_branch} удалена локально")
+                        try:
+                            self.git_ops.delete_local_branch(current_branch, force=True)
+                            self.logger.success(f"Ветка {current_branch} удалена локально")
+                        except GitOperationError as e:
+                            self.logger.error(f"Не удалось удалить локальную ветку {current_branch}: {e}")
+                            raise
                         
                         # Also delete remote branch
                         try:
@@ -396,8 +413,12 @@ class Orchestrator:
                             self.logger.warning(f"Не удалось удалить удалённую ветку: {e}")
                         
                         # Switch to main branch after deletion
-                        self.git_ops.checkout_branch('main')
-                        self.logger.info("Переключились на ветку main")
+                        try:
+                            self.git_ops.checkout_branch('main')
+                            self.logger.success("Переключились на ветку main")
+                        except GitOperationError as e:
+                            self.logger.error(f"Не удалось переключиться на main: {e}")
+                            raise
                     except GitOperationError as e:
                         self.logger.warning(f"Не удалось удалить ветку {current_branch}: {e}")
                         # Still return None to trigger new workflow even if deletion failed
@@ -407,8 +428,12 @@ class Orchestrator:
                     # Switch to main to create new branch
                     self.logger.info("Переключаемся на main для создания новой ветки")
                     try:
-                        self.git_ops.checkout_branch('main')
-                        self.logger.info("Переключились на ветку main")
+                        try:
+                            self.git_ops.checkout_branch('main')
+                            self.logger.success("Переключились на ветку main")
+                        except GitOperationError as e:
+                            self.logger.error(f"Не удалось переключиться на main: {e}")
+                            raise
                     except GitOperationError as e:
                         self.logger.warning(f"Не удалось переключиться на main: {e}")
                         return None
@@ -416,8 +441,12 @@ class Orchestrator:
                     # PR is OPEN - switch to main to create new branch
                     self.logger.info(f"PR для ветки {current_branch} открыт. Переключаемся на main для создания новой ветки")
                     try:
-                        self.git_ops.checkout_branch('main')
-                        self.logger.info("Переключились на ветку main")
+                        try:
+                            self.git_ops.checkout_branch('main')
+                            self.logger.success("Переключились на ветку main")
+                        except GitOperationError as e:
+                            self.logger.error(f"Не удалось переключиться на main: {e}")
+                            raise
                     except GitOperationError as e:
                         self.logger.warning(f"Не удалось переключиться на main: {e}")
                         return None
@@ -425,8 +454,12 @@ class Orchestrator:
                 # No PR exists for this branch - switch to main to create new branch
                 self.logger.info(f"Нет PR для ветки {current_branch}. Переключаемся на main для создания новой ветки")
                 try:
-                    self.git_ops.checkout_branch('main')
-                    self.logger.info("Переключились на ветку main")
+                    try:
+                        self.git_ops.checkout_branch('main')
+                        self.logger.success("Переключились на ветку main")
+                    except GitOperationError as e:
+                        self.logger.error(f"Не удалось переключиться на main: {e}")
+                        raise
                 except GitOperationError as e:
                     self.logger.warning(f"Не удалось переключиться на main: {e}")
                     return None
@@ -464,8 +497,12 @@ class Orchestrator:
                     try:
                         # Delete local branch with force since PR is confirmed merged
                         # Git may think branch is not fully merged to remote even though PR is merged
-                        self.git_ops.delete_local_branch(branch, force=True)
-                        self.logger.success(f"Ветка {branch} удалена локально")
+                        try:
+                            self.git_ops.delete_local_branch(branch, force=True)
+                            self.logger.success(f"Ветка {branch} удалена локально")
+                        except GitOperationError as e:
+                            self.logger.error(f"Не удалось удалить локальную ветку {branch}: {e}")
+                            raise
                         
                         # Delete remote branch
                         try:
@@ -517,22 +554,35 @@ class Orchestrator:
 
                         try:
                             # Switch to main
-                            self.git_ops.checkout_branch('main')
-                            self.logger.info("Переключились на ветку main")
+                            try:
+                                self.git_ops.checkout_branch('main')
+                                self.logger.success("Переключились на ветку main")
+                            except GitOperationError as e:
+                                self.logger.error(f"Не удалось переключиться на main: {e}")
+                                raise
 
                             # Update main - stash changes if needed
                             try:
                                 status = self.git_ops.get_status()
                                 if status.has_changes:
                                     self.logger.info("Stashing local changes before pulling main")
-                                    self.git_ops.stash_changes()
-                                self.git_ops.pull_rebase()
-                                self.logger.info("Ветка main обновлена")
+                                    try:
+                                        self.git_ops.stash_changes()
+                                        self.logger.success("Changes stashed successfully")
+                                    except GitOperationError as e:
+                                        self.logger.error(f"Не удалось сохранить изменения в stash: {e}")
+                                        raise
+                                try:
+                                    self.git_ops.pull_rebase()
+                                    self.logger.success("Ветка main обновлена")
+                                except GitOperationError as e:
+                                    self.logger.error(f"Не удалось обновить main: {e}")
+                                    raise
                                 # Pop stash if we stashed
                                 if status.has_changes:
                                     try:
                                         self.git_ops.pop_stash()
-                                        self.logger.info("Restored stashed changes")
+                                        self.logger.success("Restored stashed changes")
                                     except GitOperationError as e:
                                         self.logger.warning(f"Could not restore stashed changes: {e}")
                             except GitOperationError as e:
@@ -540,8 +590,12 @@ class Orchestrator:
 
                             # Delete local branch with force since PR is confirmed merged
                             # Git may think branch is not fully merged to remote even though PR is merged
-                            self.git_ops.delete_local_branch(current_branch, force=True)
-                            self.logger.success(f"Ветка {current_branch} удалена локально")
+                            try:
+                                self.git_ops.delete_local_branch(current_branch, force=True)
+                                self.logger.success(f"Ветка {current_branch} удалена локально")
+                            except GitOperationError as e:
+                                self.logger.error(f"Не удалось удалить локальную ветку {current_branch}: {e}")
+                                raise
 
                             # Delete remote branch with detailed logging
                             self.logger.info(f"Удаление удалённой ветки origin/{current_branch}")
@@ -666,7 +720,12 @@ class Orchestrator:
         
         # Push
         self.logger.info("Push изменений...")
-        self.git_ops.push(branch_name, set_upstream=False)
+        try:
+            self.git_ops.push(branch_name, set_upstream=False)
+            self.logger.success("Push выполнен успешно")
+        except GitOperationError as e:
+            self.logger.error(f"Не удалось выполнить push: {e}")
+            raise
         
         # Ask about PR creation if not already exists
         if not existing_pr:
@@ -847,7 +906,12 @@ class Orchestrator:
         if not self.local_mode:
             # Push
             self.logger.info("Push изменений...")
-            self.git_ops.push(branch_name)
+            try:
+                self.git_ops.push(branch_name)
+                self.logger.success("Push выполнен успешно")
+            except GitOperationError as e:
+                self.logger.error(f"Не удалось выполнить push: {e}")
+                raise
             
             # Ask about PR creation
             if self.create_pr or self._ask_create_pr():
@@ -963,8 +1027,12 @@ class Orchestrator:
                 self.logger.info("Changes will be analyzed and committed to new branch.")
                 return
             
-            self.git_ops._run_git_command(['git', 'fetch', 'origin'])
-            self.logger.success("Git fetch выполнен")
+            try:
+                self.git_ops._run_git_command(['git', 'fetch', 'origin'])
+                self.logger.success("Git fetch выполнен")
+            except GitOperationError as e:
+                self.logger.error(f"Не удалось выполнить git fetch: {e}")
+                raise
             
             # Get current branch
             current_branch = self.git_ops.get_current_branch()
@@ -1050,7 +1118,12 @@ class Orchestrator:
         self.logger.info(f"Исходная ветка: {original_branch}")
         
         # Create and checkout branch
-        self.git_ops.create_and_checkout_branch(branch_name)
+        try:
+            self.git_ops.create_and_checkout_branch(branch_name)
+            self.logger.success(f"Ветка {branch_name} создана и переключена")
+        except GitOperationError as e:
+            self.logger.error(f"Не удалось создать ветку {branch_name}: {e}")
+            raise
     
     def _run_pre_commit_hooks(self) -> None:
         """Run pre-commit hooks before commit."""
@@ -1104,9 +1177,10 @@ class Orchestrator:
         # This handles staged, unstaged, and deleted files correctly
         try:
             self.git_ops.add_all_changes()
-            self.logger.info("Added all changes to staging area")
-        except Exception as e:
-            self.logger.warning(f"Failed to add all changes: {e}")
+            self.logger.success("Added all changes to staging area")
+        except GitOperationError as e:
+            self.logger.error(f"Не удалось добавить изменения в staging area: {e}")
+            raise
         
         # Check if there are any staged changes before committing
         status_after = self.git_ops.get_status()
@@ -1115,7 +1189,12 @@ class Orchestrator:
             return
         
         # Commit
-        self.git_ops.commit(commit_message, amend=amend)
+        try:
+            self.git_ops.commit(commit_message, amend=amend)
+            self.logger.success("Commit выполнен успешно")
+        except GitOperationError as e:
+            self.logger.error(f"Не удалось выполнить commit: {e}")
+            raise
     
     def _is_deleted_file(self, file_path: str) -> bool:
         """
