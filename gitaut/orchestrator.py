@@ -934,6 +934,13 @@ class Orchestrator:
         self.logger.step("Синхронизация с remote")
         
         try:
+            # Check if working tree is dirty before attempting pull
+            status = self.git_ops.get_status()
+            if status.has_changes:
+                self.logger.info("Repository has local changes. Remote synchronization skipped intentionally.")
+                self.logger.info("Changes will be analyzed and committed to new branch.")
+                return
+            
             self.git_ops._run_git_command(['git', 'fetch', 'origin'])
             self.logger.success("Git fetch выполнен")
             
