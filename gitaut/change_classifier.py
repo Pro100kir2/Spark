@@ -32,12 +32,14 @@ class DiffAnalysis:
 
 @dataclass
 class ChangeIntent:
-    """Semantic representation of change intent."""
+    """Semantic representation of change intent - single source of truth for all generators."""
     type: str  # feat, fix, refactor, chore, docs, test, ci, build, perf, style
     scope: Optional[str]  # gitaut, api, frontend, etc.
     action: str  # add, fix, refactor, update, remove, etc.
-    target: str  # what was changed (branch-naming, change-analysis, etc.)
+    target: str  # what was changed (primary component)
     confidence: float  # 0.0 to 1.0
+    primary_component: str  # main component being changed (e.g., "commit-generator", "branch-namer")
+    secondary_components: List[str]  # other affected components
 
 
 class ChangeClassifier:
@@ -79,6 +81,11 @@ class ChangeClassifier:
         Returns:
             ChangeIntent object with semantic representation.
         """
+        # Ensure diff is a string
+        if not isinstance(diff, str):
+            self.logger.warning(f"diff is not a string, got {type(diff)}. Converting to string.")
+            diff = str(diff)
+        
         diff_lower = diff.lower()
         
         # Initialize scores for each change type
@@ -114,12 +121,17 @@ class ChangeClassifier:
         # Determine target (what was changed)
         target = self._determine_target(added_files, modified_files, directories, diff_lower)
         
+        # Determine primary and secondary components
+        primary_component, secondary_components = self._determine_components(added_files, modified_files, directories)
+        
         return ChangeIntent(
             type=change_type,
             scope=scope,
             action=action,
             target=target,
-            confidence=confidence
+            confidence=confidence,
+            primary_component=primary_component,
+            secondary_components=secondary_components
         )
     
     def _initialize_scores(self) -> Dict[str, int]:
@@ -350,3 +362,75 @@ class ChangeClassifier:
             return 'gitaut'
         
         return 'code'
+    
+    def _determine_components(self, added_files: List[str], modified_files: List[str], directories: Dict[str, int]) -> tuple[str, List[str]]:
+        """
+        Determine primary and secondary components from files.
+        
+        Args:
+            added_files: List of added files.
+            modified_files: List of modified files.
+            directories: Dictionary of directories.
+            
+        Returns:
+            Tuple of (primary_component, secondary_components).
+        """
+        all_files = added_files + modified_files
+        
+        # GitAut-specific component mappings
+        component_mappings = {
+            'change-classifier': 'change-classifier',
+            'change_classifier': 'change-classifier',
+            'classifier': 'change-classifier',
+            'commit-generator': 'commit-generator',
+            'commit_generator': 'commit-generator',
+            'generator': 'commit-generator',
+            'branch-namer': 'branch-namer',
+            'branch_namer': 'branch-namer',
+            'namer': 'branch-namer',
+            'description-builder': 'description-builder',
+            'description_builder': 'description-builder',
+            'builder': 'description-builder',
+            'orchestrator': 'orchestrator',
+            'git-operations': 'git-operations',
+            'git_operations': 'git-operations',
+            'github-client': 'github-client',
+            'github_client': 'github-client',
+            'config-loader': 'config-loader',
+            'config_loader': 'config-loader',
+            'dependency-installer': 'dependency-installer',
+            'dependency_installer': 'dependency-installer',
+            'input-validator': 'input-validator',
+            'input_validator': 'input-validator',
+            'error-handler': 'error-handler',
+            'error_handler': 'error-handler',
+            'logger': 'logger',
+            'pre-commit': 'pre-commit',
+            'pre_commit': 'pre-commit',
+        }
+        
+        # Count component occurrences
+        component_counts = {}
+        for file_path in all_files:
+            file_name = file_path.split('/')[-1].lower()
+            for pattern, component in component_mappings.items():
+                if pattern in file_name:
+                    component_counts[component] = component_counts.get(component, 0) + 1
+        
+        # Also check directories
+        for directory in directories.keys():
+            dir_name = directory.split('/')[-1].lower()
+            for pattern, component in component_mappings.items():
+                if pattern in dir_name:
+                    component_counts[component] = component_counts.get(component, 0) + 1
+        
+        # Sort by count
+        sorted_components = sorted(component_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        if sorted_components:
+            primary_component = sorted_components[0][0]
+            secondary_components = [comp for comp, _ in sorted_components[1:]]
+            return primary_component, secondary_components
+        
+        # Fallback
+        return 'gitaut', []

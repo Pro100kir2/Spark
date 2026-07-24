@@ -9,6 +9,7 @@ from typing import List, Optional
 
 from .logger import Logger
 from .change_analyzer import ChangeAnalysis
+from .change_classifier import ChangeIntent
 
 
 class BranchNameGenerator:
@@ -39,11 +40,16 @@ class BranchNameGenerator:
         
         self.logger.step("Генерация названия ветки")
         
-        # Generate the descriptive part
-        description = self._generate_description(analysis)
-        
-        # Use only description for branch name (type prefix only in commit messages)
-        branch_name = description
+        # Use ChangeIntent if available for semantic branch naming
+        if analysis.change_intent:
+            intent = analysis.change_intent
+            # Use primary_component from ChangeIntent
+            component = intent.primary_component.replace('-', ' ')
+            branch_name = f"{intent.type}-{component}"
+        else:
+            # Fallback to old method
+            description = self._generate_description(analysis)
+            branch_name = description
         
         # Sanitize the branch name
         branch_name = self._sanitize_branch_name(branch_name)
