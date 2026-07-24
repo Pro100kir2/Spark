@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gitaut"
+version = "1.0.0"
+description = "Автоматизация Git workflow: создание ветки, коммит, push, PR и мониторинг"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    {name = "Pro100kir2", email = "kirilllupanov15@gmail.com"}
+]
+keywords = ["git", "automation", "github", "workflow", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control :: Git",
+]
+
+dependencies = [
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "pytest>=7.0.0",
+]
+
+[project.scripts]
+gitaut = "gitaut.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Pro100kir2/GitAut"
+Repository = "https://github.com/Pro100kir2/GitAut.git"
+Issues = "https://github.com/Pro100kir2/GitAut/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gitaut*"]
+
+[tool.setuptools.package-data]
+gitaut = ["config/*.yaml"]
+
+[tool.setuptools]
+include-package-data = true
