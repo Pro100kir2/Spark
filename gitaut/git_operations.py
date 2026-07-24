@@ -351,24 +351,33 @@ class GitOperations:
     def add_files(self, file_paths: List[str]) -> None:
         """
         Add files to staging area or remove deleted files.
+        Handles renamed files and deleted files properly.
         
         Args:
             file_paths: List of file paths to add or remove.
         """
         added_count = 0
         for file_path in file_paths:
-            # Check if file exists
-            if Path(file_path).exists():
-                self._run_git_command(['git', 'add', file_path])
+            # Handle renamed files (format: old_path -> new_path)
+            if ' -> ' in file_path:
+                # Extract the new path (after the arrow)
+                new_path = file_path.split(' -> ')[1]
+                self._run_git_command(['git', 'add', new_path])
                 added_count += 1
             else:
-                # File was deleted, use git rm
-                try:
-                    self._run_git_command(['git', 'rm', file_path])
+                # Check if file exists
+                if Path(file_path).exists():
+                    self._run_git_command(['git', 'add', file_path])
                     added_count += 1
-                except GitOperationError:
-                    # File might not be tracked, ignore deletion completely
-                    self.logger.debug(f"File {file_path} not tracked, skipping deletion")
+                else:
+                    # File was deleted, use git rm
+                    try:
+                        self._run_git_command(['git', 'rm', file_path])
+                        added_count += 1
+                    except GitOperationError:
+                        # File might not be tracked, ignore deletion completely
+                        self.logger.debug(f"File {file_path} not tracked, skipping deletion")
+        
         if added_count > 0:
             self.logger.success(f"Added {added_count} file(s) to staging area")
         else:
@@ -515,19 +524,23 @@ class GitOperations:
     
     def delete_remote_branch(self, branch_name: str) -> None:
         """
-        Delete a remote branch.
+        Delete a remote branch. Gracefully handles if branch doesn't exist.
         
         Args:
             branch_name: Branch name to delete.
             
         Raises:
-            BranchDeletionError: If deletion fails.
+            BranchDeletionError: If deletion fails for reasons other than branch not existing.
         """
         try:
             self._run_git_command(['git', 'push', 'origin', '--delete', branch_name])
             self.logger.success(f"Deleted remote branch: {branch_name}")
         except GitOperationError as e:
-            raise BranchDeletionError(f"Failed to delete remote branch {branch_name}: {str(e)}")
+            # Check if error is because branch doesn't exist remotely
+            if "remote ref does not exist" in str(e) or "couldn't find remote ref" in str(e):
+                self.logger.info(f"Remote branch {branch_name} does not exist, skipping deletion")
+            else:
+                raise BranchDeletionError(f"Failed to delete remote branch {branch_name}: {str(e)}")
     
     def get_remote_url(self) -> Optional[str]:
         """
@@ -687,23 +700,6 @@ class GitOperations:
         """
         untracked = self.get_untracked_files()
         return [f for f in untracked if not self.is_file_in_gitignore(f)]
-    
-    def add_files(self, file_paths: List[str]) -> None:
-        """
-        Add files to staging area.
-        
-        Args:
-            file_paths: List of file paths to add.
-        """
-        for file_path in file_paths:
-            # Handle renamed files (format: old_path -> new_path)
-            if ' -> ' in file_path:
-                # Extract the new path (after the arrow)
-                new_path = file_path.split(' -> ')[1]
-                self._run_git_command(['git', 'add', new_path])
-            else:
-                self._run_git_command(['git', 'add', file_path])
-        self.logger.success(f"Added {len(file_paths)} file(s) to staging area")
     
     def add_to_gitignore(self, file_paths: List[str]) -> None:
         """
