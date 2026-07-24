@@ -365,10 +365,21 @@ class Orchestrator:
                         self.git_ops.checkout_branch('main')
                         self.logger.info("Переключились на ветку main")
 
-                        # Update main branch
+                        # Update main branch - stash changes if needed
                         try:
+                            status = self.git_ops.get_status()
+                            if status.has_changes:
+                                self.logger.info("Stashing local changes before pulling main")
+                                self.git_ops.stash_changes()
                             self.git_ops.pull_rebase()
                             self.logger.info("Ветка main обновлена")
+                            # Pop stash if we stashed
+                            if status.has_changes:
+                                try:
+                                    self.git_ops.pop_stash()
+                                    self.logger.info("Restored stashed changes")
+                                except GitOperationError as e:
+                                    self.logger.warning(f"Could not restore stashed changes: {e}")
                         except GitOperationError as e:
                             self.logger.warning(f"Не удалось обновить main: {e}")
 
@@ -509,10 +520,21 @@ class Orchestrator:
                             self.git_ops.checkout_branch('main')
                             self.logger.info("Переключились на ветку main")
 
-                            # Update main
+                            # Update main - stash changes if needed
                             try:
+                                status = self.git_ops.get_status()
+                                if status.has_changes:
+                                    self.logger.info("Stashing local changes before pulling main")
+                                    self.git_ops.stash_changes()
                                 self.git_ops.pull_rebase()
                                 self.logger.info("Ветка main обновлена")
+                                # Pop stash if we stashed
+                                if status.has_changes:
+                                    try:
+                                        self.git_ops.pop_stash()
+                                        self.logger.info("Restored stashed changes")
+                                    except GitOperationError as e:
+                                        self.logger.warning(f"Could not restore stashed changes: {e}")
                             except GitOperationError as e:
                                 self.logger.warning(f"Не удалось обновить main: {e}")
 
@@ -1066,8 +1088,8 @@ class Orchestrator:
     
     def _commit_changes(self, commit_message: str, amend: bool = False) -> None:
         """
-        Stage and commit changes.
-        Only adds tracked files, asks confirmation for new files.
+        Stage and commit changes automatically.
+        Adds ALL changes without user intervention.
         
         Args:
             commit_message: Commit message to use.
@@ -1075,46 +1097,16 @@ class Orchestrator:
         """
         self.logger.step("Индексация и коммит изменений")
         
-        # Get status to check for new files
+        # Get status to check for all changes
         status = self.git_ops.get_status()
         
-        # Add only tracked files (modified) - combine staged and unstaged
-        # Filter out deleted files - they don't exist and can't be added
-        modified_files = [f for f in status.staged_files + status.unstaged_files 
-                         if not self._is_deleted_file(f)]
-        if modified_files:
-            self.logger.debug(f"Attempting to add files: {modified_files}")
-            self.logger.debug(f"Staged files: {status.staged_files}")
-            self.logger.debug(f"Unstaged files: {status.unstaged_files}")
-            self.git_ops.add_files(modified_files)
-            self.logger.info(f"Added {len(modified_files)} modified file(s)")
-        
-        # Ask about new files
-        if status.untracked_files:
-            self.logger.info(f"Found {len(status.untracked_files)} untracked file(s)")
-            
-            # Filter out sensitive files
-            safe_new_files = [f for f in status.untracked_files 
-                            if not any(sensitive in f for sensitive in self.sensitive_files)]
-            
-            if safe_new_files:
-                if self.interactive:
-                    print(f"\nНовые файлы для добавления:")
-                    for f in safe_new_files:
-                        print(f"  - {f}")
-                    print("\nДобавить эти файлы? (Y/n): ", end='')
-                    response = InputValidator.sanitize_input(input())
-                    try:
-                        if InputValidator.validate_yes_no(response):
-                            self.git_ops.add_files(safe_new_files)
-                            self.logger.info(f"Added {len(safe_new_files)} new file(s)")
-                        else:
-                            self.logger.info("Новые файлы не добавлены")
-                    except ValueError as e:
-                        self.logger.warning(f"Invalid input: {e}")
-                        self.logger.info("Новые файлы не добавлены")
-                else:
-                    self.logger.info("Новые файлы не добавлены (используйте --interactive для подтверждения)")
+        # Add ALL changes automatically using git add -A
+        # This handles staged, unstaged, and deleted files correctly
+        try:
+            self.git_ops.add_all_changes()
+            self.logger.info("Added all changes to staging area")
+        except Exception as e:
+            self.logger.warning(f"Failed to add all changes: {e}")
         
         # Check if there are any staged changes before committing
         status_after = self.git_ops.get_status()
