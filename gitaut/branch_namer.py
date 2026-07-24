@@ -39,9 +39,6 @@ class BranchNameGenerator:
         
         self.logger.step("Генерация названия ветки")
         
-        # Determine the type prefix
-        change_type = analysis.likely_type
-        
         # Generate the descriptive part
         description = self._generate_description(analysis)
         
@@ -60,9 +57,10 @@ class BranchNameGenerator:
         Generate a descriptive part of the branch name.
         
         Rules:
-        - Max 3 words
+        - Semantic: action + entity (what changed, not where)
+        - Max 3-4 words
         - kebab-case
-        - Max ~35 chars (to fit in 40 total with type/)
+        - Max ~50 chars
         
         Args:
             analysis: ChangeAnalysis object.
@@ -70,210 +68,179 @@ class BranchNameGenerator:
         Returns:
             Description string.
         """
-        # Extract keywords from affected directories
-        directory_keywords = self._extract_directory_keywords(analysis.directories)
+        # Extract action verb from change type
+        action = self._extract_action(analysis)
         
-        # Extract keywords from file types
-        file_type_keywords = self._extract_file_type_keywords(analysis.file_types)
+        # Extract entity/object from diff content
+        entity = self._extract_entity(analysis)
         
-        # Extract keywords from diff patterns
-        diff_keywords = self._extract_diff_keywords(analysis.diff_summary)
-        
-        # Combine and prioritize keywords
-        all_keywords = directory_keywords + file_type_keywords + diff_keywords
-        
-        if all_keywords:
-            # Use the most relevant keyword(s) - max 3 words, kebab-case
-            words = all_keywords[:3]  # Max 3 words
-            description = '-'.join(words)  # kebab-case
+        if action and entity:
+            description = f"{action}-{entity}"
+        elif action:
+            description = action
+        elif entity:
+            description = f"update-{entity}"
         else:
             # Fallback to generic description
             description = self._get_generic_description(analysis)
         
-        # Ensure description is not too long (max ~35 chars to fit in 40 total with type/)
-        if len(description) > 35:
-            description = description[:35]
+        # Smart truncation - don't break words
+        description = self._smart_truncate(description, max_length=50)
         
         return description
     
-    def _extract_directory_keywords(self, directories: dict) -> List[str]:
+    def _extract_action(self, analysis: ChangeAnalysis) -> str:
         """
-        Extract meaningful keywords from directory paths.
+        Extract action verb from change analysis.
         
         Args:
-            directories: Dictionary of directory -> count.
+            analysis: ChangeAnalysis object.
             
         Returns:
-            List of keywords.
+            Action verb (add, fix, update, remove, refactor, etc.).
         """
-        keywords = []
-        
-        # Common meaningful directory names
-        meaningful_dirs = {
-            'app': 'app',
-            'api': 'api',
-            'auth': 'auth',
-            'user': 'user',
-            'admin': 'admin',
-            'models': 'models',
-            'schemas': 'schemas',
-            'services': 'services',
-            'controllers': 'controllers',
-            'views': 'views',
-            'templates': 'templates',
-            'static': 'static',
-            'tests': 'tests',
-            'migrations': 'migrations',
-            'scripts': 'scripts',
+        # Map likely change types to actions
+        type_to_action = {
+            'feat': 'add',
+            'fix': 'fix',
+            'bugfix': 'fix',
+            'refactor': 'refactor',
+            'perf': 'optimize',
+            'style': 'format',
+            'test': 'test',
             'docs': 'docs',
-            'config': 'config',
-            'utils': 'utils',
-            'helpers': 'helpers',
-            'middleware': 'middleware',
-            'routes': 'routes',
-            'handlers': 'handlers',
-            'database': 'database',
-            'db': 'database',
-            'docker': 'docker',
-            'deploy': 'deploy',
+            'chore': 'update',
             'ci': 'ci',
-            'github': 'github',
-            'frontend': 'frontend',
-            'backend': 'backend',
-            'client': 'client',
-            'server': 'server',
+            'build': 'build',
         }
         
-        for directory in directories.keys():
-            dir_parts = directory.split('/')
-            for part in dir_parts:
-                if part.lower() in meaningful_dirs:
-                    keyword = meaningful_dirs[part.lower()]
-                    if keyword not in keywords:
-                        keywords.append(keyword)
+        action = type_to_action.get(analysis.likely_type, 'update')
         
-        return keywords
+        # Override based on file operations
+        if analysis.added_files and not analysis.modified_files and not analysis.deleted_files:
+            action = 'add'
+        elif analysis.deleted_files and not analysis.added_files and not analysis.modified_files:
+            action = 'remove'
+        
+        return action
     
-    def _extract_file_type_keywords(self, file_types: dict) -> List[str]:
+    def _extract_entity(self, analysis: ChangeAnalysis) -> str:
         """
-        Extract keywords from file types.
+        Extract entity/object from diff content.
         
         Args:
-            file_types: Dictionary of file extension -> count.
+            analysis: ChangeAnalysis object.
             
         Returns:
-            List of keywords.
+            Entity name (what was changed).
         """
-        keywords = []
+        # Extract from file names first (more specific than directories)
+        entity = self._extract_entity_from_files(analysis)
         
-        # Map file extensions to keywords
-        extension_map = {
-            '.py': 'python',
-            '.js': 'javascript',
-            '.ts': 'typescript',
-            '.tsx': 'react',
-            '.jsx': 'react',
-            '.vue': 'vue',
-            '.rb': 'ruby',
-            '.go': 'go',
-            '.rs': 'rust',
-            '.java': 'java',
-            '.kt': 'kotlin',
-            '.swift': 'swift',
-            '.sql': 'sql',
-            '.sh': 'shell',
-            '.yaml': 'yaml',
-            '.yml': 'yaml',
-            '.json': 'json',
-            '.xml': 'xml',
-            '.html': 'html',
-            '.css': 'css',
-            '.scss': 'scss',
-            '.md': 'markdown',
-            '.txt': 'text',
-            '.dockerfile': 'docker',
-            'dockerfile': 'docker',
-        }
+        if not entity:
+            # Fallback to diff patterns
+            entity = self._extract_entity_from_diff(analysis.diff_summary)
         
-        for ext in file_types.keys():
-            ext_lower = ext.lower()
-            if ext_lower in extension_map:
-                keyword = extension_map[ext_lower]
-                if keyword not in keywords:
-                    keywords.append(keyword)
-        
-        return keywords
+        return entity
     
-    def _extract_diff_keywords(self, diff_summary: str) -> List[str]:
+    def _extract_entity_from_files(self, analysis: ChangeAnalysis) -> str:
         """
-        Extract keywords from diff summary.
+        Extract entity from file names.
+        
+        Args:
+            analysis: ChangeAnalysis object.
+            
+        Returns:
+            Entity name.
+        """
+        all_files = analysis.added_files + analysis.modified_files + analysis.deleted_files
+        
+        # Common entity patterns in file names
+        entity_keywords = [
+            'auth', 'login', 'user', 'token', 'jwt', 'session', 'password',
+            'api', 'endpoint', 'route', 'controller', 'handler',
+            'model', 'schema', 'database', 'migration', 'query',
+            'service', 'worker', 'job', 'task',
+            'config', 'setting', 'env', 'environment',
+            'cache', 'redis', 'queue',
+            'payment', 'order', 'cart', 'checkout', 'invoice',
+            'notification', 'email', 'sms', 'push',
+            'upload', 'file', 'image', 'media',
+            'search', 'filter', 'pagination',
+            'validation', 'sanitization',
+            'middleware', 'guard', 'interceptor',
+            'component', 'widget', 'view', 'template',
+            'hook', 'plugin', 'extension',
+            'docker', 'deploy', 'ci', 'workflow',
+        ]
+        
+        for file_path in all_files:
+            file_name = file_path.split('/')[-1].lower()
+            for keyword in entity_keywords:
+                if keyword in file_name:
+                    return keyword
+        
+        return ''
+    
+    def _extract_entity_from_diff(self, diff_summary: str) -> str:
+        """
+        Extract entity from diff summary.
         
         Args:
             diff_summary: Diff summary string.
             
         Returns:
-            List of keywords.
+            Entity name.
         """
-        keywords = []
-        
-        # Common patterns to look for
-        patterns = {
-            'import': 'imports',
-            'class': 'class',
-            'function': 'function',
-            'test': 'test',
-            'fix': 'fix',
-            'bug': 'bug',
-            'error': 'error',
-            'exception': 'exception',
-            'auth': 'auth',
-            'login': 'login',
-            'user': 'user',
-            'api': 'api',
-            'endpoint': 'endpoint',
-            'route': 'route',
-            'model': 'model',
-            'schema': 'schema',
-            'database': 'database',
-            'query': 'query',
-            'docker': 'docker',
-            'deploy': 'deploy',
-            'config': 'config',
-            'dependency': 'dependency',
-            'version': 'version',
-            'documentation': 'docs',
-            'readme': 'readme',
-            'migration': 'migration',
-            'refactor': 'refactor',
-            'optimize': 'optimize',
-            'performance': 'performance',
-            'security': 'security',
-            'session': 'session',
-            'cache': 'cache',
-            'validation': 'validation',
-            'pagination': 'pagination',
-            'filter': 'filter',
-            'search': 'search',
-            'upload': 'upload',
-            'export': 'export',
-            'import': 'import',
-            'notification': 'notification',
-            'email': 'email',
-            'payment': 'payment',
-            'order': 'order',
-            'product': 'product',
-            'cart': 'cart',
-            'checkout': 'checkout',
-        }
+        # Same keywords as file-based extraction
+        entity_keywords = [
+            'auth', 'login', 'user', 'token', 'jwt', 'session', 'password',
+            'api', 'endpoint', 'route', 'controller', 'handler',
+            'model', 'schema', 'database', 'migration', 'query',
+            'service', 'worker', 'job', 'task',
+            'config', 'setting', 'env', 'environment',
+            'cache', 'redis', 'queue',
+            'payment', 'order', 'cart', 'checkout', 'invoice',
+            'notification', 'email', 'sms', 'push',
+            'upload', 'file', 'image', 'media',
+            'search', 'filter', 'pagination',
+            'validation', 'sanitization',
+            'middleware', 'guard', 'interceptor',
+            'component', 'widget', 'view', 'template',
+            'hook', 'plugin', 'extension',
+            'docker', 'deploy', 'ci', 'workflow',
+        ]
         
         diff_lower = diff_summary.lower()
+        for keyword in entity_keywords:
+            if keyword in diff_lower:
+                return keyword
         
-        for pattern, keyword in patterns.items():
-            if pattern in diff_lower:
-                if keyword not in keywords:
-                    keywords.append(keyword)
+        return ''
+    
+    
+    
+    def _smart_truncate(self, text: str, max_length: int) -> str:
+        """
+        Truncate text without breaking words.
         
-        return keywords
+        Args:
+            text: Text to truncate.
+            max_length: Maximum length.
+            
+        Returns:
+            Truncated text.
+        """
+        if len(text) <= max_length:
+            return text
+        
+        # Find the last hyphen before max_length
+        last_hyphen = text.rfind('-', 0, max_length)
+        if last_hyphen > 0:
+            return text[:last_hyphen]
+        
+        # If no hyphen, just truncate
+        return text[:max_length]
     
     def _get_generic_description(self, analysis: ChangeAnalysis) -> str:
         """
@@ -307,17 +274,17 @@ class BranchNameGenerator:
         # Convert to lowercase
         name = name.lower()
         
-        # Replace spaces and underscores with hyphens, but preserve colon spacing
-        # First replace colon + space with colon to avoid double hyphens
-        name = re.sub(r':\s+', ':', name)
+        # Replace spaces, underscores, and colons with hyphens
+        name = re.sub(r'[\s_:]+', '-', name)
         
-        # Then replace remaining spaces and underscores with hyphens
-        name = re.sub(r'[\s_]+', '-', name)
+        # Remove special characters except hyphens and alphanumerics
+        name = re.sub(
+            r'[^a-z0-9-]',
+            '-',
+            name
+        )
         
-        # Remove special characters except hyphens and colons
-        name = re.sub(r'[^a-z0-9-:]', '', name)
-        
-        # Remove consecutive hyphens (but preserve colon)
+        # Remove consecutive hyphens
         name = re.sub(r'-+', '-', name)
         
         # Remove leading/trailing hyphens
@@ -336,6 +303,7 @@ class BranchNameGenerator:
     def validate_branch_name(self, name: str) -> bool:
         """
         Validate that a branch name follows Git conventions.
+        Uses git check-ref-format for official validation.
         
         Args:
             name: Branch name to validate.
@@ -347,21 +315,22 @@ class BranchNameGenerator:
         if not name:
             return False
         
-        # Check for invalid characters
-        if re.search(r'[^a-z0-9-]', name):
+        # Use git check-ref-format for official validation
+        try:
+            from .git_operations import GitOperations
+            # Create a temporary GitOperations instance for validation
+            # We need a logger, but we can create a minimal one
+            from .logger import Logger
+            temp_logger = Logger(verbose=False)
+            git_ops = GitOperations(logger=temp_logger, dry_run=True)
+            
+            # Use git check-ref-format to validate
+            result = git_ops._run_git_command(
+                ['git', 'check-ref-format', '--allow-onelevel', f'refs/heads/{name}'],
+                check=True,
+                ignore_dry_run=True
+            )
+            return True
+        except Exception:
+            # If git command fails, name is invalid
             return False
-        
-        # Check for consecutive hyphens
-        if '--' in name:
-            return False
-        
-        # Check for leading/trailing hyphens
-        if name.startswith('-') or name.endswith('-'):
-            return False
-        
-        # Check for reserved names
-        reserved_names = ['head', 'main', 'master', 'develop']
-        if name in reserved_names:
-            return False
-        
-        return True
