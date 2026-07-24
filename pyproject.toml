@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gitaut"
-version = "1.0.2"
+version = "1.0.3"
 description = "Автоматизация Git workflow: создание ветки, коммит, push, PR и мониторинг"
 readme = "README.md"
 requires-python = ">=3.11"
