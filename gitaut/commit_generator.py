@@ -129,6 +129,16 @@ class CommitMessageGenerator:
             'component', 'widget', 'view', 'template',
             'hook', 'plugin', 'extension',
             'docker', 'deploy', 'ci', 'workflow',
+            # GitAut-specific keywords
+            'classifier', 'analyzer', 'parser', 'generator', 'builder',
+            'namer', 'validator', 'handler', 'manager', 'controller',
+            'client', 'server', 'service', 'worker', 'job',
+            'loader', 'writer', 'reader', 'formatter',
+            'logger', 'logging', 'monitoring', 'metrics',
+            'git', 'operations', 'github', 'branch', 'commit',
+            'change', 'intent', 'description', 'orchestrator',
+            'dependency', 'installer', 'config', 'loader',
+            'input', 'pre-commit', 'hooks', 'error',
         ]
         
         for file_path in all_files:
