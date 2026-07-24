@@ -18,10 +18,18 @@ class DiffAnalysis:
     """Represents analysis of diff content."""
     line_count: int
     word_count: int
+    additions: int
+    deletions: int
+    changed_files: int
+    complexity_score: float
     has_imports: bool
     has_function_def: bool
     has_class_def: bool
     has_test_code: bool
+    added_function_def: bool
+    removed_function_def: bool
+    added_class_def: bool
+    removed_class_def: bool
 
 
 @dataclass
@@ -50,6 +58,7 @@ class ChangeAnalyzer:
         """
         self.git_ops = git_ops
         self.logger = logger
+        self.MAX_DIFF_SIZE = 5 * 1024 * 1024  # 5MB limit
     
     def analyze_changes(self) -> ChangeAnalysis:
         """
@@ -93,13 +102,17 @@ class ChangeAnalyzer:
             elif change.status == 'renamed':
                 renamed_files.append(change.path)
         
-        # Get diff summary
+        # Get diff summary with size limit protection
         diff = self.git_ops.get_diff()
+        if len(diff.encode('utf-8')) > self.MAX_DIFF_SIZE:
+            self.logger.warning(f"Diff size ({len(diff.encode('utf-8')) / 1024 / 1024:.2f}MB) exceeds limit ({self.MAX_DIFF_SIZE / 1024 / 1024}MB). Using simplified analysis.")
+            diff = diff[:self.MAX_DIFF_SIZE]  # Truncate for safety
         diff_summary = self._summarize_diff(diff)
         
-        # Determine likely change type
+        # Determine likely change type with enhanced analysis
+        diff_analysis = self._analyze_diff_content(diff)
         likely_type = self._determine_change_type(
-            added_files, modified_files, deleted_files, diff, file_types, directories
+            added_files, modified_files, deleted_files, renamed_files, diff, file_types, directories, diff_analysis
         )
         
         analysis = ChangeAnalysis(
@@ -145,7 +158,7 @@ class ChangeAnalyzer:
     
     def _extract_patterns(self, diff: str) -> List[str]:
         """
-        Extract common patterns from diff.
+        Extract common patterns from diff using regex to avoid false matches.
         
         Args:
             diff: Git diff output.
@@ -155,60 +168,60 @@ class ChangeAnalyzer:
         """
         patterns = []
         
-        # Common patterns to look for
+        # Common patterns with word boundary regex to avoid false matches
         pattern_keywords = {
-            'import': 'imports',
-            'class': 'classes',
-            'def ': 'functions',
-            'async def': 'async functions',
-            'test': 'tests',
-            'fix': 'fixes',
-            'bug': 'bug fixes',
-            'error': 'error handling',
-            'exception': 'exceptions',
-            'TODO': 'todos',
-            'FIXME': 'fixmes',
-            'deprecated': 'deprecations',
-            'migration': 'migration',
-            'refactor': 'refactoring',
-            'optimize': 'optimization',
-            'performance': 'performance',
-            'security': 'security',
-            'auth': 'authentication',
-            'login': 'login',
-            'user': 'user-related',
-            'api': 'api',
-            'endpoint': 'endpoints',
-            'route': 'routes',
-            'model': 'models',
-            'schema': 'schemas',
-            'database': 'database',
-            'db': 'database',
-            'sql': 'sql',
-            'query': 'queries',
-            'docker': 'docker',
-            'deploy': 'deployment',
-            'ci': 'ci/cd',
-            'workflow': 'workflows',
-            'config': 'configuration',
-            'env': 'environment',
-            'dependency': 'dependencies',
-            'requirement': 'requirements',
-            'package': 'packages',
-            'version': 'version',
-            'update': 'updates',
-            'upgrade': 'upgrades',
-            'documentation': 'documentation',
-            'readme': 'readme',
-            'doc': 'docs',
-            'comment': 'comments',
+            r'\bimport\b': 'imports',
+            r'\bclass\b': 'classes',
+            r'\bdef\s': 'functions',
+            r'\basync def\b': 'async functions',
+            r'\btest\b': 'tests',
+            r'\bfix\b': 'fixes',
+            r'\bbug\b': 'bug fixes',
+            r'\berror\b': 'error handling',
+            r'\bexception\b': 'exceptions',
+            r'\bTODO\b': 'todos',
+            r'\bFIXME\b': 'fixmes',
+            r'\bdeprecated\b': 'deprecations',
+            r'\bmigration\b': 'migration',
+            r'\brefactor\b': 'refactoring',
+            r'\boptimize\b': 'optimization',
+            r'\bperformance\b': 'performance',
+            r'\bsecurity\b': 'security',
+            r'\bauth\b': 'authentication',
+            r'\blogin\b': 'login',
+            r'\buser\b': 'user-related',
+            r'\bapi\b': 'api',
+            r'\bendpoint\b': 'endpoints',
+            r'\broute\b': 'routes',
+            r'\bmodel\b': 'models',
+            r'\bschema\b': 'schemas',
+            r'\bdatabase\b': 'database',
+            r'\bdb\b': 'database',
+            r'\bsql\b': 'sql',
+            r'\bquery\b': 'queries',
+            r'\bdocker\b': 'docker',
+            r'\bdeploy\b': 'deployment',
+            r'\bci\b': 'ci/cd',
+            r'\bworkflow\b': 'workflows',
+            r'\bconfig\b': 'configuration',
+            r'\benv\b': 'environment',
+            r'\bdependency\b': 'dependencies',
+            r'\brequirement\b': 'requirements',
+            r'\bpackage\b': 'packages',
+            r'\bversion\b': 'version',
+            r'\bupdate\b': 'updates',
+            r'\bupgrade\b': 'upgrades',
+            r'\bdocumentation\b': 'documentation',
+            r'\breadme\b': 'readme',
+            r'\bdoc\b': 'docs',
+            r'\bcomment\b': 'comments',
         }
         
         diff_lower = diff.lower()
         
-        for keyword, pattern in pattern_keywords.items():
-            if keyword in diff_lower:
-                patterns.append(pattern)
+        for pattern, label in pattern_keywords.items():
+            if re.search(pattern, diff_lower):
+                patterns.append(label)
         
         return patterns
     
@@ -217,97 +230,139 @@ class ChangeAnalyzer:
         added_files: List[str],
         modified_files: List[str],
         deleted_files: List[str],
+        renamed_files: List[str],
         diff: str,
         file_types: Dict[str, int],
-        directories: Dict[str, int]
+        directories: Dict[str, int],
+        diff_analysis: 'DiffAnalysis'
     ) -> str:
         """
-        Determine the likely type of change based on heuristics.
+        Determine the likely type of change using a scoring system.
         
         Args:
             added_files: List of added files.
             modified_files: List of modified files.
             deleted_files: List of deleted files.
+            renamed_files: List of renamed files.
             diff: Git diff output.
             file_types: Dictionary of file types.
             directories: Dictionary of affected directories.
+            diff_analysis: DiffAnalysis object with content metrics.
             
         Returns:
             Change type (feat, fix, refactor, chore, docs, etc.).
         """
         diff_lower = diff.lower()
         
-        # Analyze diff content beyond file names
-        diff_analysis = self._analyze_diff_content(diff)
+        # Initialize scores for each change type
+        scores = {
+            'feat': 0,
+            'fix': 0,
+            'refactor': 0,
+            'chore': 0,
+            'docs': 0,
+            'test': 0,
+            'ci': 0,
+            'build': 0,
+            'perf': 0,
+            'style': 0,
+        }
         
-        # Check for documentation changes based on content
+        # Score based on file operations
+        if added_files and not modified_files and not deleted_files:
+            scores['feat'] += 5
+        elif deleted_files and not added_files and not modified_files:
+            scores['refactor'] += 3
+        elif renamed_files:
+            scores['refactor'] += 4  # Rename is almost always refactor
+        
+        # Score based on file types
         if any(ext in file_types for ext in ['.md', '.rst', '.txt']):
-            # Check if it's a typo fix vs substantial documentation
             if diff_analysis.line_count < 5 and diff_analysis.word_count < 20:
-                # Small change - likely typo fix
-                return 'style'
-            elif any('readme' in f.lower() or 'doc' in f.lower() for f in added_files + modified_files):
-                return 'docs'
+                scores['style'] += 3
+            else:
+                scores['docs'] += 4
         
-        # Check for test changes
         if any('test' in f.lower() for f in added_files + modified_files):
-            return 'test'
+            scores['test'] += 5
         
-        # Check for CI/CD changes
         if any('.github' in d or '.gitlab-ci' in d or 'ci' in d for d in directories):
-            return 'ci'
+            scores['ci'] += 5
         
-        # Check for build/dependency changes
         if any('requirements' in f or 'package' in f or 'setup.py' in f or 'pyproject' in f 
                for f in added_files + modified_files):
-            return 'build'
+            scores['build'] += 4
         
-        # Check for configuration changes
         if any('config' in f or '.env' in f or 'settings' in f for f in added_files + modified_files):
-            return 'chore'
+            scores['chore'] += 3
         
-        # Check for fix patterns in diff content
-        fix_keywords = ['fix', 'bug', 'error', 'exception', 'issue', 'patch', 'resolve', 'correct']
-        if any(keyword in diff_lower for keyword in fix_keywords):
-            return 'fix'
+        # Score based on diff content patterns (using regex for accuracy)
+        fix_keywords = [r'\bfix\b', r'\bbug\b', r'\berror\b', r'\bexception\b', r'\bissue\b', r'\bpatch\b', r'\bresolve\b', r'\bcorrect\b']
+        for keyword in fix_keywords:
+            if re.search(keyword, diff_lower):
+                scores['fix'] += 5
+                break
         
-        # Check for refactor patterns
-        refactor_keywords = ['refactor', 'rework', 'rewrite', 'simplify', 'clean', 'extract', 'consolidate']
-        if any(keyword in diff_lower for keyword in refactor_keywords):
-            return 'refactor'
+        refactor_keywords = [r'\brefactor\b', r'\brework\b', r'\brewrite\b', r'\bsimplify\b', r'\bclean\b', r'\bextract\b', r'\bconsolidate\b']
+        for keyword in refactor_keywords:
+            if re.search(keyword, diff_lower):
+                scores['refactor'] += 4
+                break
         
-        # Check for performance
-        if 'performance' in diff_lower or 'optimize' in diff_lower or 'cache' in diff_lower:
-            return 'perf'
+        if re.search(r'\bperformance\b', diff_lower) or re.search(r'\boptimize\b', diff_lower) or re.search(r'\bcache\b', diff_lower):
+            scores['perf'] += 4
         
-        # Check for style changes (formatting, linting)
-        if 'style' in diff_lower or 'format' in diff_lower or 'lint' in diff_lower or 'black' in diff_lower:
-            return 'style'
+        if re.search(r'\bstyle\b', diff_lower) or re.search(r'\bformat\b', diff_lower) or re.search(r'\blint\b', diff_lower) or re.search(r'\bblack\b', diff_lower):
+            scores['style'] += 3
         
-        # Check for chore/maintenance
-        chore_keywords = ['update', 'upgrade', 'version', 'dependency', 'migrate', 'cleanup', 'remove']
-        if any(keyword in diff_lower for keyword in chore_keywords):
-            return 'chore'
+        chore_keywords = [r'\bupdate\b', r'\bupgrade\b', r'\bversion\b', r'\bdependency\b', r'\bmigrate\b', r'\bcleanup\b', r'\bremove\b']
+        for keyword in chore_keywords:
+            if re.search(keyword, diff_lower):
+                scores['chore'] += 2
+                break
         
-        # Check for feature patterns
-        feat_keywords = ['add', 'implement', 'create', 'new', 'support', 'enable']
-        if any(keyword in diff_lower for keyword in feat_keywords):
-            return 'feat'
+        feat_keywords = [r'\badd\b', r'\bimplement\b', r'\bcreate\b', r'\bnew\b', r'\bsupport\b', r'\benable\b']
+        for keyword in feat_keywords:
+            if re.search(keyword, diff_lower):
+                scores['feat'] += 3
+                break
         
-        # Default to feat if adding new files
-        if added_files and not deleted_files:
-            return 'feat'
+        # Score based on diff analysis (added vs removed)
+        if diff_analysis.added_function_def and not diff_analysis.removed_function_def:
+            scores['feat'] += 3
+        elif diff_analysis.removed_function_def:
+            scores['refactor'] += 2
         
-        # Default to refactor for modifications
-        if modified_files:
-            return 'refactor'
+        if diff_analysis.added_class_def and not diff_analysis.removed_class_def:
+            scores['feat'] += 2
+        elif diff_analysis.removed_class_def:
+            scores['refactor'] += 2
         
-        # Default fallback
-        return 'chore'
+        # Score based on complexity/scale
+        if diff_analysis.complexity_score > 0.8:
+            scores['refactor'] += 2  # Large changes are often refactors
+        elif diff_analysis.complexity_score < 0.1:
+            scores['style'] += 1  # Small changes are often style
+        
+        # Find the type with the highest score
+        max_score = max(scores.values())
+        if max_score == 0:
+            return 'chore'  # Default fallback
+        
+        # Get all types with the max score (for tie-breaking)
+        max_types = [t for t, s in scores.items() if s == max_score]
+        
+        # Tie-breaking: prefer more specific types
+        priority_order = ['fix', 'feat', 'test', 'ci', 'build', 'docs', 'perf', 'refactor', 'style', 'chore']
+        for t in priority_order:
+            if t in max_types:
+                return t
+        
+        return max_types[0]  # Fallback to first max
     
     def _analyze_diff_content(self, diff: str) -> 'DiffAnalysis':
         """
-        Analyze diff content beyond file names.
+        Analyze diff content beyond file names with enhanced metrics.
         
         Args:
             diff: Git diff output.
@@ -317,26 +372,61 @@ class ChangeAnalyzer:
         """
         lines = diff.split('\n')
         
-        # Count actual code changes (excluding diff metadata)
-        code_lines = [line for line in lines if line.startswith('+') or line.startswith('-')]
-        code_lines = [line for line in code_lines if not line.startswith('+++') and not line.startswith('---')]
+        # Separate added and removed lines
+        added_lines = []
+        removed_lines = []
+        
+        for line in lines:
+            if line.startswith('+') and not line.startswith('+++'):
+                added_lines.append(line)
+            elif line.startswith('-') and not line.startswith('---'):
+                removed_lines.append(line)
+        
+        code_lines = added_lines + removed_lines
         
         # Count words in changes
         word_count = sum(len(line.split()) for line in code_lines)
         
-        # Check for specific patterns
-        has_imports = any('import' in line.lower() for line in code_lines)
-        has_function_def = any('def ' in line for line in code_lines)
-        has_class_def = any('class ' in line for line in code_lines)
+        # Check for specific patterns in added vs removed lines
+        has_imports = any('import' in line.lower() for line in added_lines)
+        
+        # Check for function/class definitions separately for added vs removed
+        added_function_def = any('def ' in line for line in added_lines)
+        removed_function_def = any('def ' in line for line in removed_lines)
+        has_function_def = added_function_def or removed_function_def
+        
+        added_class_def = any('class ' in line for line in added_lines)
+        removed_class_def = any('class ' in line for line in removed_lines)
+        has_class_def = added_class_def or removed_class_def
+        
         has_test_code = any('test' in line.lower() or 'assert' in line.lower() for line in code_lines)
+        
+        # Calculate complexity score based on scale of changes
+        total_files = len(added_lines) + len(removed_lines)
+        if total_files == 0:
+            complexity_score = 0.0
+        else:
+            # Complexity based on ratio of additions to total changes
+            # More additions = higher complexity (new code)
+            # More deletions = lower complexity (removal)
+            addition_ratio = len(added_lines) / total_files
+            complexity_score = addition_ratio
         
         return DiffAnalysis(
             line_count=len(code_lines),
             word_count=word_count,
+            additions=len(added_lines),
+            deletions=len(removed_lines),
+            changed_files=len(set(lines)),
+            complexity_score=complexity_score,
             has_imports=has_imports,
             has_function_def=has_function_def,
             has_class_def=has_class_def,
-            has_test_code=has_test_code
+            has_test_code=has_test_code,
+            added_function_def=added_function_def,
+            removed_function_def=removed_function_def,
+            added_class_def=added_class_def,
+            removed_class_def=removed_class_def
         )
     
     def _log_analysis(self, analysis: ChangeAnalysis) -> None:
