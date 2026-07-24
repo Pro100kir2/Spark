@@ -9,6 +9,7 @@ from typing import Optional
 
 from .logger import Logger
 from .change_analyzer import ChangeAnalysis
+from .change_classifier import ChangeIntent
 
 
 class CommitMessageGenerator:
@@ -54,11 +55,17 @@ class CommitMessageGenerator:
         
         self.logger.step("Генерация сообщения коммита")
         
-        # Determine the type
-        commit_type = custom_type if custom_type else analysis.likely_type
-        
-        # Generate the description
-        description = self._generate_description(analysis)
+        # Use ChangeIntent if available for semantic commit messages
+        if analysis.change_intent:
+            intent = analysis.change_intent
+            commit_type = custom_type if custom_type else intent.type
+            # Use primary_component for description
+            component = intent.primary_component.replace('-', ' ')
+            description = f"{intent.action} {component}"
+        else:
+            # Fallback to old method
+            commit_type = custom_type if custom_type else analysis.likely_type
+            description = self._generate_description(analysis)
         
         # Format as conventional commit
         message = self._format_conventional_commit(commit_type, description)

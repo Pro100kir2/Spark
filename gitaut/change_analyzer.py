@@ -5,31 +5,13 @@ Analyzes git diff to determine the nature of changes.
 """
 
 import re
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from pathlib import Path
 
 from .logger import Logger
 from .git_operations import GitOperations, FileChange
-
-
-@dataclass
-class DiffAnalysis:
-    """Represents analysis of diff content."""
-    line_count: int
-    word_count: int
-    additions: int
-    deletions: int
-    changed_files: int
-    complexity_score: float
-    has_imports: bool
-    has_function_def: bool
-    has_class_def: bool
-    has_test_code: bool
-    added_function_def: bool
-    removed_function_def: bool
-    added_class_def: bool
-    removed_class_def: bool
+from .change_classifier import ChangeClassifier, ChangeIntent, DiffAnalysis
 
 
 @dataclass
@@ -43,6 +25,7 @@ class ChangeAnalysis:
     directories: Dict[str, int]  # Directory -> count
     diff_summary: str
     likely_type: str  # feat, fix, refactor, chore, docs, etc.
+    change_intent: Optional[ChangeIntent] = None  # Semantic change representation
 
 
 class ChangeAnalyzer:
@@ -115,6 +98,13 @@ class ChangeAnalyzer:
             added_files, modified_files, deleted_files, renamed_files, diff, file_types, directories, diff_analysis
         )
         
+        # Use ChangeClassifier for semantic change intent
+        change_classifier = ChangeClassifier(self.logger)
+        change_intent = change_classifier.classify_change(
+            added_files, modified_files, deleted_files, renamed_files,
+            diff, file_types, directories, diff_analysis
+        )
+        
         analysis = ChangeAnalysis(
             added_files=added_files,
             modified_files=modified_files,
@@ -123,7 +113,8 @@ class ChangeAnalyzer:
             file_types=file_types,
             directories=directories,
             diff_summary=diff_summary,
-            likely_type=likely_type
+            likely_type=likely_type,
+            change_intent=change_intent
         )
         
         self._log_analysis(analysis)
@@ -169,11 +160,11 @@ class ChangeAnalyzer:
         patterns = []
         
         # Common patterns with word boundary regex to avoid false matches
+        # Reduced set to minimize noise from single-file changes
         pattern_keywords = {
             r'\bimport\b': 'imports',
             r'\bclass\b': 'classes',
             r'\bdef\s': 'functions',
-            r'\basync def\b': 'async functions',
             r'\btest\b': 'tests',
             r'\bfix\b': 'fixes',
             r'\bbug\b': 'bug fixes',
@@ -182,39 +173,22 @@ class ChangeAnalyzer:
             r'\bTODO\b': 'todos',
             r'\bFIXME\b': 'fixmes',
             r'\bdeprecated\b': 'deprecations',
-            r'\bmigration\b': 'migration',
             r'\brefactor\b': 'refactoring',
             r'\boptimize\b': 'optimization',
             r'\bperformance\b': 'performance',
-            r'\bsecurity\b': 'security',
+            # Only include auth/login/user if they appear in specific contexts
             r'\bauth\b': 'authentication',
             r'\blogin\b': 'login',
             r'\buser\b': 'user-related',
+            # Only include api/model/schema if they appear in specific contexts
             r'\bapi\b': 'api',
             r'\bendpoint\b': 'endpoints',
-            r'\broute\b': 'routes',
             r'\bmodel\b': 'models',
             r'\bschema\b': 'schemas',
-            r'\bdatabase\b': 'database',
-            r'\bdb\b': 'database',
-            r'\bsql\b': 'sql',
-            r'\bquery\b': 'queries',
-            r'\bdocker\b': 'docker',
-            r'\bdeploy\b': 'deployment',
-            r'\bci\b': 'ci/cd',
-            r'\bworkflow\b': 'workflows',
-            r'\bconfig\b': 'configuration',
-            r'\benv\b': 'environment',
-            r'\bdependency\b': 'dependencies',
-            r'\brequirement\b': 'requirements',
-            r'\bpackage\b': 'packages',
-            r'\bversion\b': 'version',
-            r'\bupdate\b': 'updates',
-            r'\bupgrade\b': 'upgrades',
-            r'\bdocumentation\b': 'documentation',
-            r'\breadme\b': 'readme',
-            r'\bdoc\b': 'docs',
-            r'\bcomment\b': 'comments',
+            # Removed: docker, deploy, ci, workflow, database, security, migration
+            # Removed: sql, query, config, env, dependency, requirement, package
+            # Removed: version, update, upgrade, documentation, readme, doc, comment
+            # These create too much noise for single-file changes
         }
         
         diff_lower = diff.lower()
@@ -223,7 +197,7 @@ class ChangeAnalyzer:
             if re.search(pattern, diff_lower):
                 patterns.append(label)
         
-        return patterns
+        return patterns[:10]  # Limit to top 10 patterns to reduce noise
     
     def _determine_change_type(
         self,
